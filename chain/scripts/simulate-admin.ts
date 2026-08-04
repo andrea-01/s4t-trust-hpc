@@ -1,16 +1,21 @@
 import { ethers } from "hardhat";
+import * as fs from "fs";
+import * as path from "path";
 
 async function main() {
     console.log("Admin simulation starting...");
     const [admin, owner] = await ethers.getSigners();
     
-    // Deploy contract
-    const Contract = await ethers.getContractFactory("OnboardingTrust");
-    const contract = await Contract.deploy();
-    await contract.waitForDeployment();
+    // Read contract address from deployments
+    const deployFile = path.join(__dirname, "..", "deployments", "localhost.json");
+    if (!fs.existsSync(deployFile)) {
+        throw new Error(`Deployment file not found at ${deployFile}. Ensure deploy.ts is run first.`);
+    }
+    const deployData = JSON.parse(fs.readFileSync(deployFile, "utf8"));
+    const address = deployData.address;
     
-    const address = await contract.getAddress();
-    console.log(`Contract deployed to: ${address}`);
+    const contract = await ethers.getContractAt("OnboardingTrust", address);
+    console.log(`Connected to contract at: ${address}`);
     
     // Listen for events before requesting so we don't miss them
     contract.on("OnboardingApproved", (requestId, deviceId, ownerAddress) => {

@@ -1,20 +1,27 @@
 import { ethers } from "hardhat";
-
-const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+import * as fs from "fs";
+import * as path from "path";
 
 async function main() {
-    console.log("Owner simulation starting... waiting for admin to deploy...");
+    console.log("Owner simulation starting... waiting for deployment file...");
     
-    // Simple retry loop to wait for contract deployment
+    // Simple retry loop to wait for deployment file
     let contract;
     const [admin, owner] = await ethers.getSigners();
+    const deployFile = path.join(__dirname, "..", "deployments", "localhost.json");
+    let contractAddress;
     
     while (true) {
         try {
-            contract = await ethers.getContractAt("OnboardingTrust", CONTRACT_ADDRESS);
-            const code = await ethers.provider.getCode(CONTRACT_ADDRESS);
-            if (code !== "0x") {
-                break; // Contract is deployed
+            if (fs.existsSync(deployFile)) {
+                const deployData = JSON.parse(fs.readFileSync(deployFile, "utf8"));
+                contractAddress = deployData.address;
+                
+                contract = await ethers.getContractAt("OnboardingTrust", contractAddress);
+                const code = await ethers.provider.getCode(contractAddress);
+                if (code !== "0x") {
+                    break; // Contract is deployed
+                }
             }
         } catch (e) {
             // Ignore error
@@ -22,7 +29,7 @@ async function main() {
         await new Promise(r => setTimeout(r, 2000));
     }
 
-    console.log("Contract found. Listening for OnboardingRequested events...");
+    console.log(`Contract found at ${contractAddress}. Listening for OnboardingRequested events...`);
     
     contract.on("OnboardingRequested", async (requestId, deviceId, requester, ownerAddress) => {
         if (ownerAddress === owner.address) {

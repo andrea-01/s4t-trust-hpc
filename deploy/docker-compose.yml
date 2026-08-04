@@ -14,6 +14,19 @@ services:
       timeout: 5s
       retries: 5
 
+  contract-deployer:
+    build:
+      context: ../chain
+      dockerfile: Dockerfile
+    command: ["npx", "hardhat", "run", "scripts/deploy.ts", "--network", "docker"]
+    volumes:
+      - ../chain/deployments:/app/deployments
+    depends_on:
+      hardhat-node:
+        condition: service_healthy
+    networks:
+      - trust-hpc-net
+
   client-admin:
     build:
       context: ../chain
@@ -21,9 +34,11 @@ services:
     command: ["npx", "hardhat", "run", "scripts/simulate-admin.ts", "--network", "docker"]
     env_file:
       - .env
+    volumes:
+      - ../chain/deployments:/app/deployments
     depends_on:
-      hardhat-node:
-        condition: service_healthy
+      contract-deployer:
+        condition: service_completed_successfully
     networks:
       - trust-hpc-net
 
@@ -34,9 +49,11 @@ services:
     command: ["npx", "hardhat", "run", "scripts/simulate-owner.ts", "--network", "docker"]
     env_file:
       - .env
+    volumes:
+      - ../chain/deployments:/app/deployments
     depends_on:
-      hardhat-node:
-        condition: service_healthy
+      contract-deployer:
+        condition: service_completed_successfully
     networks:
       - trust-hpc-net
 
