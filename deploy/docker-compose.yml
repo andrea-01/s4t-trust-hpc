@@ -78,6 +78,41 @@ services:
     networks:
       - trust-hpc-net
 
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+    networks:
+      - trust-hpc-net
+
+  notification:
+    build:
+      context: ../notification
+      dockerfile: Dockerfile
+    volumes:
+      - ../chain/deployments:/app/deployments
+      - ../chain/artifacts:/app/artifacts
+      - ../notification/state:/app/state
+    env_file:
+      - .env
+    environment:
+      - RPC_URL=http://hardhat-node:8545
+      - DEPLOYMENTS_PATH=/app/deployments/localhost.json
+      - ABI_PATH=/app/artifacts/contracts/OnboardingTrust.sol/OnboardingTrust.json
+      - CHECKPOINT_FILE=/app/state/last_processed_block.txt
+      - SMTP_HOST=mailpit
+      - SMTP_PORT=1025
+    depends_on:
+      hardhat-node:
+        condition: service_healthy
+      contract-deployer:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    networks:
+      - trust-hpc-net
+
 networks:
   trust-hpc-net:
     driver: bridge
