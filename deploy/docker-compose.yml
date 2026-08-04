@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  hardhat-node:
+    build:
+      context: ../chain
+      dockerfile: Dockerfile
+    ports:
+      - "8545:8545"
+    networks:
+      - trust-hpc-net
+    healthcheck:
+      # Node.js fetch API is available in node >= 18 to do a quick HTTP check
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8545').then(() => process.exit(0)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  client-admin:
+    build:
+      context: ../chain
+      dockerfile: Dockerfile
+    command: ["npx", "hardhat", "run", "scripts/simulate-admin.ts", "--network", "docker"]
+    env_file:
+      - .env
+    depends_on:
+      hardhat-node:
+        condition: service_healthy
+    networks:
+      - trust-hpc-net
+
+  client-owner:
+    build:
+      context: ../chain
+      dockerfile: Dockerfile
+    command: ["npx", "hardhat", "run", "scripts/simulate-owner.ts", "--network", "docker"]
+    env_file:
+      - .env
+    depends_on:
+      hardhat-node:
+        condition: service_healthy
+    networks:
+      - trust-hpc-net
+
+networks:
+  trust-hpc-net:
+    driver: bridge
