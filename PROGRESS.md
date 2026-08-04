@@ -17,6 +17,8 @@
 ### Task Completati
 - [x] 0. Eccezione su M1: Modificato `chain/` per avere uno script di deploy unico `deploy.ts` che salva l'indirizzo su volume condiviso, introdotto servizio `contract-deployer` in docker-compose.yml per fornire l'indirizzo ai client M1 e (successivamente) al gateway. (Commit: fix(chain): add dedicated deploy script and shared address file).
 - [x] 1. Scaffold gateway project and dependencies (Commit: feat: scaffold gateway project and dependencies).
+- [x] 2. Add chain_client for smart contract interaction (Commit: feat: add chain_client for smart contract interaction).
+- [x] 3. Add event_poller for background event caching (Commit: feat: add event_poller for background event caching).
 
 ### Domande Aperte
 - Nessuna.
