@@ -24,7 +24,7 @@ class ChainListener:
                 abi = contract_json.get('abi', [])
             with open(settings.deployments_path, 'r') as f:
                 deployments = json.load(f)
-                address = deployments.get('OnboardingTrust')
+                address = deployments.get('address')
             
             if not address:
                 raise ValueError("Contract address not found in deployments file")
