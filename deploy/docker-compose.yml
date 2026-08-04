@@ -66,6 +66,8 @@ services:
     volumes:
       - ../chain/deployments:/app/deployments
       - ../chain/artifacts:/app/artifacts
+    env_file:
+      - .env
     environment:
       - RPC_URL=http://hardhat-node:8545
       - DEPLOYMENTS_PATH=/app/deployments/localhost.json

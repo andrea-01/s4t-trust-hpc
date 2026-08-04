@@ -19,12 +19,17 @@ async def request_onboarding(req: OnboardingRequest):
     try:
         result = chain_client.request_onboarding(
             device_id=req.device_id,
-            owner_address=req.owner_address,
-            requester_key=req.requester_key
+            owner_address=req.owner_address
         )
         return {"status": "success", "tx_hash": result["tx_hash"], "request_id": result["request_id"]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e).lower()
+        if "connection" in error_msg or "timeout" in error_msg or "max retries exceeded" in error_msg:
+            raise HTTPException(status_code=503, detail="Blockchain node unreachable")
+        elif "revert" in error_msg or "execution reverted" in error_msg:
+            raise HTTPException(status_code=400, detail=f"Contract reverted: {str(e)}")
+        else:
+            raise HTTPException(status_code=400, detail=f"Transaction failed: {str(e)}")
 
 @app.get("/status/{request_id}")
 async def get_status(request_id: int):

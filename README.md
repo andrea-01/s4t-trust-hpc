@@ -58,7 +58,7 @@ Questo servizio facilita l'integrazione di sistemi esterni permettendo loro di n
 
 ### Endpoint Disponibili
 
-- `POST /onboarding-request`: Crea una richiesta di onboarding. Richiede un JSON con `device_id`, `owner_address` e (opzionale) `requester_key`.
+- `POST /onboarding-request`: Crea una richiesta di onboarding. Richiede un JSON con `device_id` e `owner_address`. La chiave privata dell'admin (necessaria per firmare la transazione) è gestita internamente dal server e non va mai esposta o fornita nella richiesta.
 - `GET /status/{request_id}`: Legge lo stato corrente (Pending, Approved, Rejected, Revoked) di una richiesta direttamente dalla chain.
 - `GET /events/recent`: Espone gli ultimi eventi emessi dallo smart contract, prelevati tramite un task di polling in background.
 

@@ -20,26 +20,18 @@ class ChainClient:
             
         self.contract = self.w3.eth.contract(address=address, abi=abi)
         
-    def request_onboarding(self, device_id: str, owner_address: str, requester_key: str = None) -> dict:
+    def request_onboarding(self, device_id: str, owner_address: str) -> dict:
         """
         Sends an onboarding request. 
-        In M2 we simplify by using the first hardhat account as admin if no key is provided.
         """
-        if not requester_key:
-            # Default to account 0 for simulation
-            requester_account = self.w3.eth.accounts[0]
-            tx_hash = self.contract.functions.requestOnboarding(device_id, owner_address).transact({
-                'from': requester_account
-            })
-        else:
-            # If using a real private key
-            account = self.w3.eth.account.from_key(requester_key)
-            tx = self.contract.functions.requestOnboarding(device_id, owner_address).build_transaction({
-                'from': account.address,
-                'nonce': self.w3.eth.get_transaction_count(account.address),
-            })
-            signed_tx = self.w3.eth.account.sign_transaction(tx, requester_key)
-            tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        # Sign with admin private key from server config
+        account = self.w3.eth.account.from_key(settings.admin_private_key)
+        tx = self.contract.functions.requestOnboarding(device_id, owner_address).build_transaction({
+            'from': account.address,
+            'nonce': self.w3.eth.get_transaction_count(account.address),
+        })
+        signed_tx = self.w3.eth.account.sign_transaction(tx, settings.admin_private_key)
+        tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
             
         receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
         

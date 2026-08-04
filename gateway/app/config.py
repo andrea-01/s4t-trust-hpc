@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     deployments_path: str = "/app/deployments/localhost.json"
     abi_path: str = "/app/artifacts/contracts/OnboardingTrust.sol/OnboardingTrust.json"
     poll_interval: int = 5
+    admin_private_key: str
     
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

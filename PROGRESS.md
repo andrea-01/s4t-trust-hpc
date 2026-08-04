@@ -22,6 +22,9 @@
 - [x] 4. Implement FastAPI endpoints (Commit: feat: implement FastAPI endpoints).
 - [x] 5. Add integration tests for gateway against local hardhat node (Commit: test: add integration tests for gateway against local hardhat node).
 - [x] 6. Create gateway Dockerfile (Commit: feat: create gateway Dockerfile).
+- [x] 7. Integrate gateway into docker-compose (Commit: feat: integrate gateway into docker-compose).
+- [x] 8. Update README with gateway instructions (Commit: docs: update README with gateway instructions).
+- [x] Fix correttivi M2: Rimosso requester_key in favore di ADMIN_PRIVATE_KEY da env, aggiunta validazione owner_address, gestite eccezioni web3.py. (Commit: fix(gateway): remove private key from API surface, add input validation).
 
 ### Domande Aperte
 - Nessuna.

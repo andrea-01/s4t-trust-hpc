@@ -29,11 +29,17 @@ def test_round_trip():
     assert status_data["device_id"] == "test-device-01"
     assert status_data["status"] == "Pending"
     
-    # 3. Check recent events (we might need to wait for poller to catch up, 
-    # but the poller runs in a background task which in TestClient isn't actively running the same way unless we trigger it,
-    # or the transaction block is already mined so the next poller tick gets it.
-    # We will just verify the endpoint doesn't crash, since testing background async tasks in FastAPI TestClient requires specific setup).
+    # 3. Check recent events
     events_response = client.get("/events/recent")
     assert events_response.status_code == 200
     events_data = events_response.json()
     assert isinstance(events_data, list)
+
+def test_malformed_owner_address():
+    request_data = {
+        "device_id": "test-device-02",
+        "owner_address": "not-an-address"
+    }
+    response = client.post("/onboarding-request", json=request_data)
+    assert response.status_code == 422
+
