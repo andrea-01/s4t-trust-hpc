@@ -15,8 +15,10 @@ contract OnboardingTrust {
         Status status;
     }
 
-    // Mapping from requestId to Request details
+    /// @notice Mapping from requestId to Request details
     mapping(uint256 => Request) public requests;
+
+    /// @notice The ID of the next onboarding request to be created
     uint256 public nextRequestId;
 
     event OnboardingRequested(uint256 indexed requestId, string deviceId, address indexed requester, address indexed owner);
