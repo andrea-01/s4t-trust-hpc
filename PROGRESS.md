@@ -20,6 +20,7 @@
 - [x] 2. Add chain_client for smart contract interaction (Commit: feat: add chain_client for smart contract interaction).
 - [x] 3. Add event_poller for background event caching (Commit: feat: add event_poller for background event caching).
 - [x] 4. Implement FastAPI endpoints (Commit: feat: implement FastAPI endpoints).
+- [x] 5. Add integration tests for gateway against local hardhat node (Commit: test: add integration tests for gateway against local hardhat node).
 
 ### Domande Aperte
 - Nessuna.
