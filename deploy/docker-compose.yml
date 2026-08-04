@@ -57,6 +57,25 @@ services:
     networks:
       - trust-hpc-net
 
+  gateway:
+    build:
+      context: ../gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../chain/deployments:/app/deployments
+      - ../chain/artifacts:/app/artifacts
+    environment:
+      - RPC_URL=http://hardhat-node:8545
+      - DEPLOYMENTS_PATH=/app/deployments/localhost.json
+      - ABI_PATH=/app/artifacts/contracts/OnboardingTrust.sol/OnboardingTrust.json
+    depends_on:
+      contract-deployer:
+        condition: service_completed_successfully
+    networks:
+      - trust-hpc-net
+
 networks:
   trust-hpc-net:
     driver: bridge
