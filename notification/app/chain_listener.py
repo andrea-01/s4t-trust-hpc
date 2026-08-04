@@ -41,11 +41,8 @@ class ChainListener:
                 logger.info(f"Loaded checkpoint: block {block}")
                 return block
         except (FileNotFoundError, ValueError):
-            logger.info("No valid checkpoint found. Starting from latest block.")
-            try:
-                return self.w3.eth.block_number
-            except Exception:
-                return 0
+            logger.info("No valid checkpoint found. Starting from block 0.")
+            return 0
 
     def _save_checkpoint(self, block: int):
         try:
@@ -79,8 +76,8 @@ class ChainListener:
                 logger.info(f"Polling blocks {from_block} to {to_block}")
                 
                 events = self.contract.events.OnboardingRequested.get_logs(
-                    fromBlock=from_block,
-                    toBlock=to_block
+                    from_block=from_block,
+                    to_block=to_block
                 )
                 
                 for event in events:
