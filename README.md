@@ -50,3 +50,24 @@ Per testare logicamente lo smart contract:
    ```bash
    npx hardhat test
    ```
+
+## Fase M2: Gateway Python
+
+Il modulo `gateway/` implementa un proxy REST stateless in Python (FastAPI + web3.py) per interagire con lo smart contract. 
+Questo servizio facilita l'integrazione di sistemi esterni permettendo loro di non dover gestire le connessioni RPC direttamente.
+
+### Endpoint Disponibili
+
+- `POST /onboarding-request`: Crea una richiesta di onboarding. Richiede un JSON con `device_id`, `owner_address` e (opzionale) `requester_key`.
+- `GET /status/{request_id}`: Legge lo stato corrente (Pending, Approved, Rejected, Revoked) di una richiesta direttamente dalla chain.
+- `GET /events/recent`: Espone gli ultimi eventi emessi dallo smart contract, prelevati tramite un task di polling in background.
+
+### Avvio tramite Docker Compose
+
+Il gateway è integrato nell'ambiente `deploy/docker-compose.yml`. Avviando la rete, il gateway sarà esposto sulla porta 8000:
+
+```bash
+cd deploy
+docker compose up --build
+```
+Una volta avviato, la documentazione Swagger interattiva sarà disponibile all'indirizzo [http://localhost:8000/docs](http://localhost:8000/docs).
