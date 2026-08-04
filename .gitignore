@@ -1,0 +1,8 @@
+node_modules/
+.env
+AGENTS.md
+.env.*
+!*.env.example
+artifacts/
+cache/
+*.log
