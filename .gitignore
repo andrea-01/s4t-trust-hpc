@@ -6,3 +6,4 @@ AGENTS.md
 artifacts/
 cache/
 *.log
+venv/
