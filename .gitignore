@@ -8,3 +8,5 @@ cache/
 *.log
 venv/
 __pycache__/
+notification/state/*
+!notification/state/.gitkeep
