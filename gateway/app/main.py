@@ -17,12 +17,12 @@ app = FastAPI(title="S4T Trust HPC Gateway", lifespan=lifespan)
 @app.post("/onboarding-request")
 async def request_onboarding(req: OnboardingRequest):
     try:
-        tx_hash = chain_client.request_onboarding(
+        result = chain_client.request_onboarding(
             device_id=req.device_id,
             owner_address=req.owner_address,
             requester_key=req.requester_key
         )
-        return {"status": "success", "tx_hash": tx_hash}
+        return {"status": "success", "tx_hash": result["tx_hash"], "request_id": result["request_id"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

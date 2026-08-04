@@ -20,7 +20,7 @@ class ChainClient:
             
         self.contract = self.w3.eth.contract(address=address, abi=abi)
         
-    def request_onboarding(self, device_id: str, owner_address: str, requester_key: str = None) -> str:
+    def request_onboarding(self, device_id: str, owner_address: str, requester_key: str = None) -> dict:
         """
         Sends an onboarding request. 
         In M2 we simplify by using the first hardhat account as admin if no key is provided.
@@ -31,8 +31,6 @@ class ChainClient:
             tx_hash = self.contract.functions.requestOnboarding(device_id, owner_address).transact({
                 'from': requester_account
             })
-            self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            return tx_hash.hex()
         else:
             # If using a real private key
             account = self.w3.eth.account.from_key(requester_key)
@@ -42,8 +40,17 @@ class ChainClient:
             })
             signed_tx = self.w3.eth.account.sign_transaction(tx, requester_key)
             tx_hash = self.w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-            self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            return tx_hash.hex()
+            
+        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+        
+        # Decode event to get requestId
+        logs = self.contract.events.OnboardingRequested().process_receipt(receipt)
+        request_id = logs[0].args.requestId if logs else None
+        
+        return {
+            "tx_hash": tx_hash.hex(),
+            "request_id": request_id
+        }
 
     def get_status(self, request_id: int) -> dict:
         """
