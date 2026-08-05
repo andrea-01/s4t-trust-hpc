@@ -1,8 +1,8 @@
 # PROGRESS
 
 ## Sessione Attuale
-**Data:** 2026-08-04
-**Fase:** M3
+**Data:** 2026-08-05
+**Fase:** M4
 
 ### Task Completati
 - [x] M0: Scaffolding repo e placeholder creati.
@@ -41,3 +41,19 @@
 
 ### Domande Aperte
 - Nessuna.
+
+## Fase: M4 (Interfaccia FastAPI)
+
+### Task Completati
+- [x] 1. Scaffold `ui/` module structure and dependencies (Punti 1 e 7)
+- [x] 2. Implementazione di `gateway_client.py` con gestione errori (Punto 2)
+- [x] 3. Implementazione main FastAPI app con route JSON aggiuntiva (`/api/requests`) (Punto 3)
+- [x] 4. Creazione template Jinja2 per dashboard (Punto 4)
+- [x] 5. Implementazione polling via JavaScript per auto-aggiornamento (Punto 5)
+- [x] 6. Aggiunta integration test per la UI (Punto 6)
+- [x] 7. Integrazione Docker Compose per esporre la porta 8080 (Punto 8)
+- [x] 8. Aggiornamento documentazione (Punto 9)
+
+### Note (Fase M4)
+- È stato aggiunto un endpoint JSON `/api/requests` dedicato esclusivamente al polling JavaScript. Tutte le interazioni con il gateway sono incapsulate in blocchi `try/except` per gestire timeout e cadute del servizio, restituendo errori 503 HTTP o messaggi espliciti nell'HTML, impedendo crash non gestiti o ritorni `500` oscuri.
+- Come verificato tramite l'esplorazione del codice, il gateway non espone alcun endpoint di `/health`, quindi la dipendenza del servizio `ui` in Docker Compose utilizza la notazione standard `depends_on: gateway` senza aspettare specifici test di integrità.
