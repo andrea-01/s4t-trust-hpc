@@ -99,3 +99,25 @@ Per testare le notifiche:
    docker compose run --rm --no-deps client-admin
    ```
 3. Visita [http://localhost:8025](http://localhost:8025) per visualizzare l'email nella mailbox simulata di Mailpit!
+
+## Fase M4: Dashboard (UI)
+
+Il modulo `ui/` implementa un'interfaccia web minimale sviluppata in Python (FastAPI + Jinja2) per interagire con il gateway.
+Questa UI permette di visionare in tempo reale le richieste di onboarding e di crearne di nuove, disaccoppiando l'utente finale dalle chiamate API.
+
+### Caratteristiche
+- Rendering HTML server-side tramite template Jinja2.
+- Tabella per visualizzare le richieste e il loro stato, auto-aggiornata via polling asincrono in background dal client (JavaScript + fetch) senza ricaricare la pagina.
+- Form per inserire facilmente nuove richieste di onboarding (inserendo `device_id` e l'indirizzo `owner`).
+- Interfacciamento esclusivo e sicuro via REST API verso il servizio `gateway` (che fa da proxy ed espone a sua volta le interazioni blockchain).
+
+### Avvio tramite Docker Compose
+
+La Dashboard è integrata e si avvia con il resto dello stack:
+
+```bash
+cd deploy
+docker compose up -d
+```
+Una volta avviato, la Dashboard è visitabile all'indirizzo [http://localhost:8080](http://localhost:8080).
+Potrai visionare la notifica generata tramite il link diretto a Mailpit o visitando [http://localhost:8025](http://localhost:8025).
