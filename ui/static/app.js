@@ -58,7 +58,7 @@ document.addEventListener("DOMContentLoaded", () => {
             tdOwner.textContent = (event.args && event.args.owner) ? event.args.owner : "N/A";
             
             const tdRequestId = document.createElement("td");
-            tdRequestId.textContent = (event.args && event.args.requestId) ? event.args.requestId : "N/A";
+            tdRequestId.textContent = (event.args && event.args.requestId !== undefined) ? event.args.requestId : "N/A";
             
             tr.appendChild(tdEvent);
             tr.appendChild(tdDevice);
