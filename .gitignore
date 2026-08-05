@@ -10,3 +10,4 @@ venv/
 __pycache__/
 notification/state/*
 !notification/state/.gitkeep
+chain/deployments/*.json

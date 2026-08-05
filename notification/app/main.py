@@ -3,6 +3,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from notification.app.owners_registry import OwnersRegistry
 from notification.app.chain_listener import ChainListener
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 registry = OwnersRegistry()
 listener = ChainListener(registry)

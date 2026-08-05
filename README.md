@@ -71,3 +71,31 @@ cd deploy
 docker compose up --build
 ```
 Una volta avviato, la documentazione Swagger interattiva sarà disponibile all'indirizzo [http://localhost:8000/docs](http://localhost:8000/docs).
+
+## Fase M3: Notifiche Email
+
+Il modulo `notification/` implementa un demone indipendente in background (con Python, FastAPI, web3.py e smtplib) che si occupa dell'invio delle email di notifica all'owner del device quando viene creato un `OnboardingRequested`.
+Questo servizio disaccoppia la gestione delle notifiche dal Gateway e dalla catena dei blocchi, permettendo l'idempotenza (nessuna email inviata due volte) e il monitoraggio stateless degli eventi.
+
+### Caratteristiche
+- Ascolto diretto degli eventi on-chain, con tracking tramite file di checkpoint montato tramite volume.
+- Autorilevamento e reset del checkpoint in caso di interruzione o hard-reset della blockchain locale (`hardhat-node`).
+- Invio di email in formato plain-text per via SMTP senza dipendenze cloud o esterne.
+- Identificazione mock degli account verso email fittizie tramite file di registro.
+
+### Avvio tramite Docker Compose
+
+Il servizio di notifica e il server SMTP catcher `mailpit` sono integrati e operano insieme.
+Mailpit intercetta e visualizza tutte le email inviate internamente all'indirizzo http://localhost:8025 (API/Interfaccia Web).
+
+Per testare le notifiche:
+1. Avvia l'infrastruttura di base (se non lo è già):
+   ```bash
+   cd deploy
+   docker compose up -d
+   ```
+2. Invia una richiesta come admin, lanciando il container (assicurati di usare `--no-deps` in modo da non riavviare il contratto, per conservare lo stato della chain):
+   ```bash
+   docker compose run --rm --no-deps client-admin
+   ```
+3. Visita [http://localhost:8025](http://localhost:8025) per visualizzare l'email nella mailbox simulata di Mailpit!

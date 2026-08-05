@@ -66,6 +66,10 @@ class ChainListener:
 
                 current_block = self.w3.eth.block_number
                 
+                if self.last_processed_block > current_block:
+                    logger.warning(f"Chain reset detected! Current block ({current_block}) is lower than checkpoint ({self.last_processed_block}). Resetting checkpoint to 0.")
+                    self.last_processed_block = 0
+                    
                 if self.last_processed_block >= current_block:
                     await asyncio.sleep(settings.poll_interval)
                     continue
@@ -79,6 +83,8 @@ class ChainListener:
                     from_block=from_block,
                     to_block=to_block
                 )
+                
+                logger.info(f"Found {len(events)} events")
                 
                 for event in events:
                     self._process_event(event)
