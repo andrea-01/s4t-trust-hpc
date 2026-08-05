@@ -113,6 +113,19 @@ services:
     networks:
       - trust-hpc-net
 
+  ui:
+    build:
+      context: ../ui
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - GATEWAY_URL=http://gateway:8000
+    depends_on:
+      - gateway
+    networks:
+      - trust-hpc-net
+
 networks:
   trust-hpc-net:
     driver: bridge
