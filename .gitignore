@@ -12,3 +12,7 @@ __pycache__/
 notification/state/*
 !notification/state/.gitkeep
 chain/deployments/*.json
+**/venv/
+**/.venv/
+**/__pycache__/
+**/*.pyc
