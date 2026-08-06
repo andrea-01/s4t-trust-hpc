@@ -52,13 +52,13 @@ document.addEventListener("DOMContentLoaded", () => {
             tdEvent.textContent = event.event || "N/A";
             
             const tdDevice = document.createElement("td");
-            tdDevice.textContent = (event.args && event.args.deviceId) ? event.args.deviceId : "N/A";
+            tdDevice.textContent = (event.args && event.args.deviceId != null) ? event.args.deviceId : "N/A";
             
             const tdOwner = document.createElement("td");
-            tdOwner.textContent = (event.args && event.args.owner) ? event.args.owner : "N/A";
+            tdOwner.textContent = (event.args && event.args.owner != null) ? event.args.owner : "N/A";
             
             const tdRequestId = document.createElement("td");
-            tdRequestId.textContent = (event.args && event.args.requestId !== undefined) ? event.args.requestId : "N/A";
+            tdRequestId.textContent = (event.args && event.args.requestId != null) ? event.args.requestId : "N/A";
             
             tr.appendChild(tdEvent);
             tr.appendChild(tdDevice);

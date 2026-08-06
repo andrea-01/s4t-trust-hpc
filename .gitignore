@@ -1,5 +1,6 @@
 node_modules/
 .env
+ui/.venv
 AGENTS.md
 .env.*
 !*.env.example

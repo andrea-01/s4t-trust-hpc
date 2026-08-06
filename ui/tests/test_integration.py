@@ -30,3 +30,8 @@ async def test_dashboard_integration():
     events = data["events"]
     found = any(e.get("args", {}).get("deviceId") == device_id for e in events)
     assert found, f"Device ID {device_id} not found in recent events. Events: {events}"
+    
+    # Explicitly test that requestId=0 is present (if this test creates the very first event, or if it already exists)
+    # Just to be safe, check if ANY event has requestId == 0 to cover the falsy bug
+    found_zero_id = any(e.get("args", {}).get("requestId") == 0 for e in events)
+    assert found_zero_id or len(events) == 0, f"Expected at least one event with requestId=0 if events exist, but got: {events}"
