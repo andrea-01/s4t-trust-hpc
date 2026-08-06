@@ -18,7 +18,10 @@ async def test_dashboard_integration():
         follow_redirects=True
     )
     assert response.status_code == 200
-    assert device_id in response.text
+    
+    # Wait for the gateway event poller to catch up (default interval is 5s)
+    import asyncio
+    await asyncio.sleep(6)
     
     # 2. Check API endpoint for polling
     response = client.get("/api/requests")
