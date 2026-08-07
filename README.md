@@ -121,3 +121,28 @@ docker compose up -d
 ```
 Una volta avviato, la Dashboard è visitabile all'indirizzo [http://localhost:8080](http://localhost:8080).
 Potrai visionare la notifica generata tramite il link diretto a Mailpit o visitando [http://localhost:8025](http://localhost:8025).
+
+## Fase M5: HPC Engine
+
+Il modulo `hpc-engine/` implementa un benchmark isolato C++ (C++17) per valutare l'accelerazione prestazionale tramite la parallelizzazione della verifica di firme ECDSA (curva P-256) con OpenMP, operando senza alcuna dipendenza dalla blockchain o dai restanti servizi.
+
+### Caratteristiche
+- Utilizzo esclusivo della moderna API OpenSSL 3.x (`EVP_PKEY_Q_keygen`, `EVP_DigestVerify`) per performance ed efficienza sicura in multithreading.
+- Parametrizzazione avanzata via CLI: testing dinamico di range di batch-sizes e thread-counts con generazione del report finale in CSV.
+- Containerizzazione (Dockerfile locale basato su Ubuntu) per evitare overhead o "inquinamento" della macchina host (nessuna libreria come libssl-dev richiesta fuori da Docker).
+- Unit testing nativo rigoroso basato su `cassert` (nessuna dipendenza addizionale GTest/Catch2) validando modifiche dannose a messaggio e firma.
+
+### Avvio e Test
+
+Per compilare e testare il benchmark localmente:
+```bash
+cd hpc-engine
+docker build -t hpc-engine-build .
+docker run --rm -v $(pwd):/app -w /app hpc-engine-build bash -c "mkdir -p build && cd build && cmake .. && make -j && ctest -V"
+```
+
+Per lanciare il task di profilazione sui carichi:
+```bash
+docker run --rm -v $(pwd):/app -w /app hpc-engine-build bash -c "cd build && ./hpc_engine_bench 500 \"100,250,500\" \"1,2,4,8\" results.csv"
+```
+Per dettagli avanzati sulle performance misurate su carichi OpenMP, riferirsi a [hpc-engine/README.md](hpc-engine/README.md).
