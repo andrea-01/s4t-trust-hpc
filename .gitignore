@@ -19,4 +19,24 @@ chain/deployments/*.json
 
 # GRPC Generated Stubs
 **/*_pb2.py
-**/*_pb2_grpc.pybuild/
+**/*_pb2_grpc.py
+
+# Build and compiled artifacts
+build/
+hpc-engine/build/
+*.o
+*.a
+*.so
+*.dylib
+*.out
+*.exe
+
+# Testing caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS/IDE
+.DS_Store
+.idea/
+.vscode/
