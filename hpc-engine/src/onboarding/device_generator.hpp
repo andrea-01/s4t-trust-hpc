@@ -13,6 +13,14 @@ struct EVP_PKEY_Deleter {
 
 using EVP_PKEY_ptr = std::unique_ptr<EVP_PKEY, EVP_PKEY_Deleter>;
 
+struct EVP_MD_CTX_Deleter {
+    void operator()(EVP_MD_CTX* p) const {
+        if (p) EVP_MD_CTX_free(p);
+    }
+};
+
+using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, EVP_MD_CTX_Deleter>;
+
 struct Device {
     std::string device_id;
     EVP_PKEY_ptr keypair;

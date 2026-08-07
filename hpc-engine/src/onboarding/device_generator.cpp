@@ -5,12 +5,6 @@
 #include <stdexcept>
 #include <iostream>
 
-struct EVP_MD_CTX_Deleter {
-    void operator()(EVP_MD_CTX* p) const { if (p) EVP_MD_CTX_free(p); }
-};
-using EVP_MD_CTX_ptr = std::unique_ptr<EVP_MD_CTX, EVP_MD_CTX_Deleter>;
-
-
 std::vector<Device> DeviceGenerator::generate_devices(size_t count, unsigned int seed) {
     std::vector<Device> devices;
     devices.reserve(count);
