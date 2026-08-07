@@ -20,6 +20,7 @@ add_executable(hpc_engine_bench
     src/onboarding/main.cpp
     src/onboarding/device_generator.cpp
     src/onboarding/signature_bench.cpp
+    src/onboarding/csv_writer.cpp
 )
 
 target_link_libraries(hpc_engine_bench
