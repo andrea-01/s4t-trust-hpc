@@ -18,6 +18,7 @@ include_directories(${OPENSSL_INCLUDE_DIR})
 # Sorgenti principali
 add_executable(hpc_engine_bench
     src/onboarding/main.cpp
+    src/onboarding/device_generator.cpp
 )
 
 target_link_libraries(hpc_engine_bench
