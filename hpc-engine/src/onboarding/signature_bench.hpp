@@ -12,8 +12,8 @@ struct BenchResult {
 class SignatureBench {
 public:
     // Sequential signature verification baseline
-    static BenchResult run_sequential(const std::vector<Device>& devices);
+    static BenchResult run_sequential(const std::vector<Device>& devices, size_t limit = 0);
     
     // Parallel signature verification using OpenMP
-    static BenchResult run_parallel(const std::vector<Device>& devices, int num_threads);
+    static BenchResult run_parallel(const std::vector<Device>& devices, int num_threads, size_t limit = 0);
 };

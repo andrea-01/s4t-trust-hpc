@@ -3,12 +3,14 @@
 #include <iostream>
 #include <omp.h>
 
-BenchResult SignatureBench::run_sequential(const std::vector<Device>& devices) {
+BenchResult SignatureBench::run_sequential(const std::vector<Device>& devices, size_t limit) {
     auto start_time = std::chrono::high_resolution_clock::now();
     
     size_t valid_count = 0;
+    size_t actual_limit = (limit == 0 || limit > devices.size()) ? devices.size() : limit;
     
-    for (const auto& dev : devices) {
+    for (size_t i = 0; i < actual_limit; ++i) {
+        const auto& dev = devices[i];
         EVP_MD_CTX_ptr mdctx(EVP_MD_CTX_new());
         if (!mdctx) {
             continue;
@@ -27,28 +29,29 @@ BenchResult SignatureBench::run_sequential(const std::vector<Device>& devices) {
     std::chrono::duration<double> diff = end_time - start_time;
     
     BenchResult res;
-    res.batch_size = devices.size();
+    res.batch_size = actual_limit;
     res.num_threads = 1;
     res.time_seconds = diff.count();
-    res.throughput = (res.time_seconds > 0) ? (devices.size() / res.time_seconds) : 0.0;
+    res.throughput = (res.time_seconds > 0) ? (actual_limit / res.time_seconds) : 0.0;
     
-    if (valid_count != devices.size()) {
+    if (valid_count != actual_limit) {
         std::cerr << "Warning: not all signatures were valid in sequential run (" 
-                  << valid_count << "/" << devices.size() << ")\n";
+                  << valid_count << "/" << actual_limit << ")\n";
     }
     
     return res;
 }
 
-BenchResult SignatureBench::run_parallel(const std::vector<Device>& devices, int num_threads) {
+BenchResult SignatureBench::run_parallel(const std::vector<Device>& devices, int num_threads, size_t limit) {
     omp_set_num_threads(num_threads);
     
     auto start_time = std::chrono::high_resolution_clock::now();
     
     size_t valid_count = 0;
+    size_t actual_limit = (limit == 0 || limit > devices.size()) ? devices.size() : limit;
     
     #pragma omp parallel for reduction(+:valid_count)
-    for (size_t i = 0; i < devices.size(); ++i) {
+    for (size_t i = 0; i < actual_limit; ++i) {
         const auto& dev = devices[i];
         
         EVP_MD_CTX_ptr mdctx(EVP_MD_CTX_new());
@@ -69,14 +72,14 @@ BenchResult SignatureBench::run_parallel(const std::vector<Device>& devices, int
     std::chrono::duration<double> diff = end_time - start_time;
     
     BenchResult res;
-    res.batch_size = devices.size();
+    res.batch_size = actual_limit;
     res.num_threads = num_threads;
     res.time_seconds = diff.count();
-    res.throughput = (res.time_seconds > 0) ? (devices.size() / res.time_seconds) : 0.0;
+    res.throughput = (res.time_seconds > 0) ? (actual_limit / res.time_seconds) : 0.0;
     
-    if (valid_count != devices.size()) {
+    if (valid_count != actual_limit) {
         std::cerr << "Warning: not all signatures were valid in parallel run (" 
-                  << valid_count << "/" << devices.size() << ")\n";
+                  << valid_count << "/" << actual_limit << ")\n";
     }
     
     return res;
