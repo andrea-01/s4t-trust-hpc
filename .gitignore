@@ -16,3 +16,7 @@ chain/deployments/*.json
 **/.venv/
 **/__pycache__/
 **/*.pyc
+
+# GRPC Generated Stubs
+**/*_pb2.py
+**/*_pb2_grpc.py
