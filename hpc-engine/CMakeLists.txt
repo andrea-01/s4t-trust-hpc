@@ -28,3 +28,15 @@ target_link_libraries(hpc_engine_bench
     PRIVATE OpenSSL::SSL
     PRIVATE OpenSSL::Crypto
 )
+
+enable_testing()
+add_executable(test_signatures 
+    tests/test_signatures.cpp
+    src/onboarding/device_generator.cpp
+)
+target_include_directories(test_signatures PRIVATE src/onboarding)
+target_link_libraries(test_signatures
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
+)
+add_test(NAME SignatureCorrectness COMMAND test_signatures)
