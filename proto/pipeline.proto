@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package pipeline;
+
+import "google/protobuf/empty.proto";
+
+service PipelineWorker {
+  rpc Ping(google.protobuf.Empty) returns (Status);
+  rpc ExecuteTask(TaskRequest) returns (TaskResult);
+}
+
+message Status {
+  bool healthy = 1;
+  string node_id = 2;
+}
+
+enum OperationType {
+  OPERATION_UNKNOWN = 0;
+  INCREMENT_COUNTER = 1;
+}
+
+message TaskRequest {
+  OperationType operation = 1;
+  int32 input_value = 2;
+  string pipeline_id = 3;
+}
+
+message TaskResult {
+  int32 output_value = 1;
+  string node_id = 2;
+  string timestamp = 3;
+}
