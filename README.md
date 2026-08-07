@@ -175,7 +175,7 @@ docker run --rm -v $(pwd):/app -w /app hpc-engine-worker bash -c "./build/pipeli
 
 ### Esecuzione della Pipeline Completa (Compose)
 
-L'intero stack per la fase M6 (1 satellite + 3 worker) è configurato in un compose file isolato. Per avviare:
+L'intero stack per la fase M6 (1 satellite + 3 worker) è configurato in un compose file isolato. Il satellite viene esposto sulla porta **8001** (anziché 8000) per evitare conflitti di porta con il modulo `gateway` introdotto in M2 (che utilizza 8000 nello stack base). Per avviare:
 
 ```bash
 docker compose -f deploy/docker-compose.pipeline.yml up -d --build

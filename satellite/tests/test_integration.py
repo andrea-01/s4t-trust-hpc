@@ -55,19 +55,19 @@ async def test_double_leasing(async_client):
     assert "Not enough nodes available" in response2.json()["detail"]
     
 @pytest.mark.asyncio
-async def test_concurrent_leasing(async_client):
-    # Simulate concurrent lease requests that together exceed capacity
-    # Total capacity is 3. We make 3 concurrent requests for 2 nodes each.
-    # Only one should succeed.
-    tasks = [
-        async_client.post("/pipeline/lease", json={"count": 2}),
-        async_client.post("/pipeline/lease", json={"count": 2}),
-        async_client.post("/pipeline/lease", json={"count": 2})
-    ]
+async def test_concurrent_leasing_capacity(async_client):
+    # Capacità totale = 3. Lanciamo 5 richieste parallele da 1 nodo l'una.
+    # Esattamente 3 dovranno avere successo (HTTP 200) e 2 fallire (HTTP 400).
+    # Alla fine i leased_nodes nel registry devono essere esattamente 3,
+    # confermando l'assenza di race condition sul lock dell'assegnazione.
+    
+    tasks = [async_client.post("/pipeline/lease", json={"count": 1}) for _ in range(5)]
     results = await asyncio.gather(*tasks)
     
     successes = [r for r in results if r.status_code == 200]
     failures = [r for r in results if r.status_code == 400]
     
-    assert len(successes) == 1
+    assert len(successes) == 3
     assert len(failures) == 2
+    
+    assert len(registry.leased_nodes) == 3

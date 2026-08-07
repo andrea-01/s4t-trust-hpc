@@ -94,7 +94,9 @@
 ### Note (Fase M6)
 - È stata applicata rigorosamente la direttiva di non eseguire codice arbitrario: il client gRPC inietta soltanto la scelta del task definita staticamente dall'enum `OPERATION_UNKNOWN` = 0, `INCREMENT_COUNTER` = 1.
 - Abbiamo implementato un setup di generazione di stub dry (don't repeat yourself): i `.proto` vivono nella root `/proto` e sia il satellite (Dockerfile copy) sia l'hpc-engine (add_custom_command in CMake) li generano "al volo" durante la build e non vengono versionati nel repository.
-- Aggiunto `pytest-asyncio` nei requirements del modulo satellite a fronte del primo warning per `PytestUnhandledCoroutineWarning`. Test concorrenziali integrati per garantire solidità.
+- Aggiunto `pytest-asyncio` nei requirements del modulo satellite a fronte del primo warning per `PytestUnhandledCoroutineWarning`. I test concorrenziali (con 5 richieste `asyncio.gather` in parallelo) confermano empiricamente il corretto rigetto con status code 400 e la solidità del lock `asyncio.Lock` nell'assegnazione, impedendo che i nodi leased superino il pool totale a disposizione.
+- Aggiunto un test diretto in C++ (ctest `WorkerCorrectness`) per verificare esplicitamente che le chiamate del client gRPC a `ExecuteTask` gestiscano l'incremento di valore o falliscano in caso di `OPERATION_UNKNOWN` ritornando lo status `UNIMPLEMENTED`.
+- La porta esposta per il Satellite è stata settata a `8001` per non interferire con il Gateway (`8000`) attivo nel compose principale.
 
 ### Domande Aperte
-- Nessuna per la fase M6. M6 completato con successo.
+- Nessuna per la fase M6. M6 completato e verificato a tutto tondo.

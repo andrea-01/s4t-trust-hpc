@@ -77,3 +77,15 @@ target_include_directories(pipeline_worker PRIVATE ${CMAKE_CURRENT_BINARY_DIR} s
 target_link_libraries(pipeline_worker
     PRIVATE ${GRPC_LIBRARIES} ${PROTOBUF_LIBRARIES}
 )
+
+add_executable(test_worker
+    tests/test_worker.cpp
+    src/pipeline/worker_server.cpp
+    ${PROTO_SRC}
+    ${GRPC_SRC}
+)
+target_include_directories(test_worker PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src/pipeline)
+target_link_libraries(test_worker
+    PRIVATE ${GRPC_LIBRARIES} ${PROTOBUF_LIBRARIES}
+)
+add_test(NAME WorkerCorrectness COMMAND test_worker)
