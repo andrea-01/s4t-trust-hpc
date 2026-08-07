@@ -19,6 +19,7 @@ include_directories(${OPENSSL_INCLUDE_DIR})
 add_executable(hpc_engine_bench
     src/onboarding/main.cpp
     src/onboarding/device_generator.cpp
+    src/onboarding/signature_bench.cpp
 )
 
 target_link_libraries(hpc_engine_bench
