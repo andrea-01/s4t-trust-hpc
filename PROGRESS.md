@@ -2,7 +2,7 @@
 
 ## Sessione Attuale
 **Data:** 2026-08-05
-**Fase:** M4
+**Fase:** M5
 
 ### Task Completati
 - [x] M0: Scaffolding repo e placeholder creati.
@@ -73,7 +73,7 @@
 
 ### Note (Fase M5)
 - Le prestazioni su benchmark di 500 records sintetici mostrano uno speedup effettivo di ~3.7x utilizzando 8 threads (67k vs 18k validazioni al secondo), confermando l'efficacia dell'approccio OpenMP.
-- L'allocazione dei contesti OpenSSL (`EVP_MD_CTX_new()`) è eseguita ad ogni interazione nel loop. L'anomalia di scaling (da 1 a 2 thread con speedup solo 1.3x) è imputata a questo, e la soluzione (context reuse per thread) è stata documentata esplicitamente nel README come ottimizzazione futura, giustificando il comportamento osservato. Il numero di core fisici sulla macchina è stato verificato in 20.
+- L'allocazione dei contesti OpenSSL (`EVP_MD_CTX_new()`) è eseguita ad ogni interazione nel loop. Si ipotizza che l'anomalia di scaling (da 1 a 2 thread con speedup solo 1.3x) sia imputabile a questo, sebbene manchi ancora una verifica sperimentale della performance dopo un eventuale context reuse. La potenziale soluzione è stata documentata esplicitamente nel README come ottimizzazione futura. Il numero di core fisici sulla macchina è stato verificato in 20.
 - Gestione della memoria verificata per l'oggetto `EVP_PKEY`, e i contesti `EVP_MD_CTX`, `EVP_PKEY_CTX` tramite `std::unique_ptr` con relativi deleters. Un residuo di debug/refactoring su `EVP_MD_CTX_Deleter` è stato correttamente individuato e storicizzato con un commit dedicato, garantendo uno staging pulito.
 - Codice compilato con successo mantenendo `-Wall -Wextra` senza warning a compile-time (incluso il controllo esplicito sui parametri della logica).
 - La validazione tramite Test Runner nativo basato su `cassert` garantisce sicurezza contro manomissioni su messaggi e firme su API OpenSSL 3.x moderne senza aggiungere librerie esterne di dependency.
