@@ -146,3 +146,61 @@ Per lanciare il task di profilazione sui carichi:
 docker run --rm -v $(pwd):/app -w /app hpc-engine-build bash -c "cd build && ./hpc_engine_bench 500 \"100,250,500\" \"1,2,4,8\" results.csv"
 ```
 Per dettagli avanzati sulle performance misurate su carichi OpenMP, riferirsi a [hpc-engine/README.md](hpc-engine/README.md).
+
+## Fase M6: Pipeline Multi-Nodo HPC
+
+In questa fase introduciamo l'esecuzione distribuita dei task (`s4t-trust-hpc/satellite` e `hpc-engine/src/pipeline`) simulando un leasing e l'orchestrazione tramite gRPC. 
+Il sistema è diviso in due livelli:
+1. **Livello Applicativo (Satellite)**: Un'API FastAPI Python che orchestra i nodi disponibili tramite un registro in-memory (leasing simulato).
+2. **Livello di Esecuzione (Worker C++)**: Un'estensione dell'HPC-engine che riceve le chiamate gRPC e processa il task (in questa demo, incrementa un contatore in catena `INCREMENT_COUNTER`).
+
+Nessun codice arbitrario viene eseguito dai worker; è una scelta architetturale per garantire sicurezza, esponendo solo operazioni da un enum predefinito nel contratto gRPC (`proto/pipeline.proto`).
+
+### Sviluppo e Iterazione Locale sul Worker C++
+Durante lo sviluppo, per sfruttare il mount locale dei file (`-v $(pwd):/app`) e ricostruire solo il necessario in `hpc-engine`, il comando di test per M6 differisce da M5. Avendo necessità del file `.proto` (nella root), **tutti i comandi docker vanno eseguiti dalla cartella root del progetto (`s4t-trust-hpc/`)**, anziché da `hpc-engine/`:
+
+```bash
+# Eseguire sempre dalla root del repository:
+cd s4t-trust-hpc/
+
+# 1. Build dell'immagine di sviluppo
+docker build -f hpc-engine/Dockerfile -t hpc-engine-worker .
+
+# 2. Compilazione interattiva montando il codice aggiornato
+docker run --rm -v $(pwd):/app -w /app hpc-engine-worker bash -c "mkdir -p build && cd build && cmake ../hpc-engine && make pipeline_worker"
+
+# 3. (Opzionale) Esecuzione standalone del worker
+docker run --rm -v $(pwd):/app -w /app hpc-engine-worker bash -c "./build/pipeline_worker"
+```
+
+### Esecuzione della Pipeline Completa (Compose)
+
+L'intero stack per la fase M6 (1 satellite + 3 worker) è configurato in un compose file isolato. Per avviare:
+
+```bash
+docker compose -f deploy/docker-compose.pipeline.yml up -d --build
+```
+
+**Esempio di test della pipeline (Lease -> Run -> Release)**:
+
+1. **Lease** di 2 nodi:
+   ```bash
+   curl -X POST -H "Content-Type: application/json" -d '{"count": 2}' http://localhost:8001/pipeline/lease
+   ```
+   *Risposta attesa:* `{"pipeline_id":"<id-uuid>"}`
+
+2. **Run** del task (es. valore iniziale `10`):
+   Sostituisci `<id-uuid>` con l'ID restituito nel passaggio 1.
+   ```bash
+   curl -X POST -H "Content-Type: application/json" -d '{"initial_value": 10}' http://localhost:8001/pipeline/<id-uuid>/run
+   ```
+   *Risposta attesa:* Il risultato finale `12` con la traccia del passaggio tra i nodi (es. worker-1, worker-3).
+
+3. **Release** dei nodi per renderli nuovamente disponibili:
+   ```bash
+   curl -X POST http://localhost:8001/pipeline/<id-uuid>/release
+   ```
+   *Risposta attesa:* `{"status":"released","pipeline_id":"<id-uuid>"}`
+
+4. **Test di Concorrenza (Doppio Leasing)**:
+   Se si prova ad affittare nodi già occupati, il sistema rifiuterà la richiesta (`400 Not enough nodes available`), prevenendo race condition.

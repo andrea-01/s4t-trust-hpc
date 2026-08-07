@@ -77,3 +77,24 @@
 - Gestione della memoria verificata per l'oggetto `EVP_PKEY`, e i contesti `EVP_MD_CTX`, `EVP_PKEY_CTX` tramite `std::unique_ptr` con relativi deleters. Un residuo di debug/refactoring su `EVP_MD_CTX_Deleter` è stato correttamente individuato e storicizzato con un commit dedicato, garantendo uno staging pulito.
 - Codice compilato con successo mantenendo `-Wall -Wextra` senza warning a compile-time (incluso il controllo esplicito sui parametri della logica).
 - La validazione tramite Test Runner nativo basato su `cassert` garantisce sicurezza contro manomissioni su messaggi e firme su API OpenSSL 3.x moderne senza aggiungere librerie esterne di dependency.
+
+## Fase: M6 (Pipeline Multi-Nodo HPC)
+
+### Task Completati
+- [x] 1. Creazione contratto gRPC `proto/pipeline.proto` con operazioni base (Ping, ExecuteTask e enum INCREMENT_COUNTER).
+- [x] 2. Implementazione Worker gRPC C++ (`hpc-engine/src/pipeline/`) e aggiornamento `CMakeLists.txt` (stub autogenerati).
+- [x] 3. Aggiornamento `hpc-engine/Dockerfile` e aggiunta logica di build gRPC (installati `protobuf-compiler-grpc`, `libgrpc++-dev` su immagine base Ubuntu 24.04).
+- [x] 4. Scaffold modulo `satellite/` (FastAPI + stub generation python via `grpcio-tools` built into the Dockerfile).
+- [x] 5. Implementazione leasing in-memory in `satellite/app/node_registry.py` protetto esplicitamente da `asyncio.Lock`.
+- [x] 6. Implementazione `satellite/app/pipeline_client.py` e `main.py` per l'orchestrazione gRPC in serie sui nodi leased.
+- [x] 7. Sviluppo test Python (`pytest` e `httpx`) per verificare la concorrenza sul leasing (il doppio leasing fallisce come previsto).
+- [x] 8. Creazione stack isolato in `deploy/docker-compose.pipeline.yml`.
+- [x] 9. Aggiornamento `README.md` principale e `PROGRESS.md` documentando i due flussi di build per il worker (sviluppo locale montato in volume vs execution compose context).
+
+### Note (Fase M6)
+- È stata applicata rigorosamente la direttiva di non eseguire codice arbitrario: il client gRPC inietta soltanto la scelta del task definita staticamente dall'enum `OPERATION_UNKNOWN` = 0, `INCREMENT_COUNTER` = 1.
+- Abbiamo implementato un setup di generazione di stub dry (don't repeat yourself): i `.proto` vivono nella root `/proto` e sia il satellite (Dockerfile copy) sia l'hpc-engine (add_custom_command in CMake) li generano "al volo" durante la build e non vengono versionati nel repository.
+- Aggiunto `pytest-asyncio` nei requirements del modulo satellite a fronte del primo warning per `PytestUnhandledCoroutineWarning`. Test concorrenziali integrati per garantire solidità.
+
+### Domande Aperte
+- Nessuna per la fase M6. M6 completato con successo.

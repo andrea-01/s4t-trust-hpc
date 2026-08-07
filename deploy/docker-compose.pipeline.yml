@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  worker-1:
+    build:
+      context: ..
+      dockerfile: hpc-engine/Dockerfile
+    environment:
+      - PORT=50051
+      - NODE_ID=worker-1
+    networks:
+      - pipeline-net
+
+  worker-2:
+    build:
+      context: ..
+      dockerfile: hpc-engine/Dockerfile
+    environment:
+      - PORT=50051
+      - NODE_ID=worker-2
+    networks:
+      - pipeline-net
+
+  worker-3:
+    build:
+      context: ..
+      dockerfile: hpc-engine/Dockerfile
+    environment:
+      - PORT=50051
+      - NODE_ID=worker-3
+    networks:
+      - pipeline-net
+
+  satellite:
+    build:
+      context: ..
+      dockerfile: satellite/Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      - WORKER_NODES=worker-1:50051,worker-2:50051,worker-3:50051
+    networks:
+      - pipeline-net
+    depends_on:
+      - worker-1
+      - worker-2
+      - worker-3
+
+networks:
+  pipeline-net:
+    driver: bridge

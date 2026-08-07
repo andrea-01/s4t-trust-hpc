@@ -40,3 +40,40 @@ target_link_libraries(test_signatures
     PRIVATE OpenSSL::Crypto
 )
 add_test(NAME SignatureCorrectness COMMAND test_signatures)
+
+# --- gRPC per M6 ---
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GRPC REQUIRED grpc++)
+pkg_check_modules(PROTOBUF REQUIRED protobuf)
+
+find_program(PROTOC_EXECUTABLE protoc REQUIRED)
+find_program(GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin REQUIRED)
+
+set(PROTO_SRC "${CMAKE_CURRENT_BINARY_DIR}/pipeline.pb.cc")
+set(PROTO_HEADER "${CMAKE_CURRENT_BINARY_DIR}/pipeline.pb.h")
+set(GRPC_SRC "${CMAKE_CURRENT_BINARY_DIR}/pipeline.grpc.pb.cc")
+set(GRPC_HEADER "${CMAKE_CURRENT_BINARY_DIR}/pipeline.grpc.pb.h")
+set(PROTO_FILE "${CMAKE_SOURCE_DIR}/../proto/pipeline.proto")
+
+add_custom_command(
+    OUTPUT ${PROTO_SRC} ${PROTO_HEADER} ${GRPC_SRC} ${GRPC_HEADER}
+    COMMAND ${PROTOC_EXECUTABLE}
+    ARGS --grpc_out=${CMAKE_CURRENT_BINARY_DIR}
+         --cpp_out=${CMAKE_CURRENT_BINARY_DIR}
+         -I ${CMAKE_SOURCE_DIR}/../proto
+         --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN_EXECUTABLE}
+         ${PROTO_FILE}
+    DEPENDS ${PROTO_FILE}
+)
+
+add_executable(pipeline_worker
+    src/pipeline/main_worker.cpp
+    src/pipeline/worker_server.cpp
+    ${PROTO_SRC}
+    ${GRPC_SRC}
+)
+
+target_include_directories(pipeline_worker PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src/pipeline)
+target_link_libraries(pipeline_worker
+    PRIVATE ${GRPC_LIBRARIES} ${PROTOBUF_LIBRARIES}
+)
