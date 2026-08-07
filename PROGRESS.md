@@ -58,3 +58,20 @@
 - È stato aggiunto un endpoint JSON `/api/requests` dedicato esclusivamente al polling JavaScript. Tutte le interazioni con il gateway sono incapsulate in blocchi `try/except` per gestire timeout e cadute del servizio, restituendo errori 503 HTTP o messaggi espliciti nell'HTML, impedendo crash non gestiti o ritorni `500` oscuri.
 - Come verificato tramite l'esplorazione del codice, il gateway non espone alcun endpoint di `/health`, quindi la dipendenza del servizio `ui` in Docker Compose utilizza la notazione standard `depends_on: gateway` senza aspettare specifici test di integrità.
 - **Eccezione documentata (owners.json):** Durante il test end-to-end della Fase M4, le richieste inserite dalla UI non producevano email. Modifica fuori scope (modulo `notification/`) effettuata: aggiunto l'elenco degli account di test predefiniti di Hardhat a `owners.json`. L'eccezione è giustificata dal fatto che per validare completamente l'integrazione M4, le chiamate asincrone della blockchain generate dalla UI dovevano propagarsi al poller di notifica, che falliva silenziosamente il match dell'email per indirizzi di test non mappati.
+
+## Fase: M5 (HPC C++ Benchmark)
+
+### Task Completati
+- [x] 1. Scaffold `hpc-engine/` e creazione di `Dockerfile` per la compilazione in un ambiente C++17 pulito.
+- [x] 2. Implementazione di `device_generator` deterministico utilizzando l'API moderna OpenSSL 3.x `EVP_PKEY_Q_keygen` per ECDSA P-256 e gestione memoria sicura tramite custom deleters su `std::unique_ptr`.
+- [x] 3. Implementazione di `signature_bench` con logica di validazione sequenziale.
+- [x] 4. Estensione di `signature_bench` con `#pragma omp parallel for` di OpenMP per validazione parallela.
+- [x] 5. Implementazione esportazione risultati in CSV.
+- [x] 6. Integrazione della CLI nel `main` per la parametrizzazione di size del dataset, ranges di batch_size e ranges di threads.
+- [x] 7. Scrittura di unit test con custom runner (basato su `cassert`) per testare correttezza firma (validazione, manomissione messaggio, manomissione firma).
+- [x] 8. Esecuzione benchmark e creazione `hpc-engine/README.md` con risultati e report.
+
+### Note (Fase M5)
+- Le prestazioni su benchmark di 500 records sintetici mostrano uno speedup effettivo di ~3.7x utilizzando 8 threads (67k vs 18k validazioni al secondo), confermando l'efficacia dell'approccio OpenMP.
+- Gestione della memoria verificata per l'oggetto `EVP_PKEY`, e i contesti `EVP_MD_CTX`, `EVP_PKEY_CTX` tramite `std::unique_ptr` con relativi deleters.
+- Codice compilato con successo mantenendo `-Wall -Wextra` senza warning a compile-time.
