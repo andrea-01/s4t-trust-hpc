@@ -11,3 +11,6 @@ class OnboardingRequest(BaseModel):
         if not Web3.is_address(v):
             raise ValueError('Invalid Ethereum address')
         return v
+
+class LeasingRequest(BaseModel):
+    device_id: str

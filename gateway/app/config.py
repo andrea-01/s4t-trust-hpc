@@ -4,6 +4,7 @@ import os
 class Settings(BaseSettings):
     rpc_url: str = "http://hardhat-node:8545"
     deployments_path: str = "/app/deployments/localhost.json"
+    leasing_deployments_path: str = "/app/deployments/leasing-localhost.json"
     abi_path: str = "/app/artifacts/contracts/OnboardingTrust.sol/OnboardingTrust.json"
     poll_interval: int = 5
     admin_private_key: str
