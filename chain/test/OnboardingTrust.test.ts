@@ -101,22 +101,27 @@ describe("OnboardingTrust", function () {
     it("Should return correct status even after many historical requests (gas limit check)", async function () {
       const { contract, admin, owner } = await loadFixture(deployContractFixture);
       
-      // Create 30 historical requests
+      // 1. Create 30 historical requests for filler devices
       for (let i = 0; i < 30; i++) {
-        await contract.connect(admin).requestOnboarding(`old-dev-${i}`, owner.address);
+        await contract.connect(admin).requestOnboarding(`filler-device-${i}`, owner.address);
       }
 
-      // Add our target device
-      await contract.connect(admin).requestOnboarding("target-dev", owner.address);
+      // 2. Add our target device (worker-1)
+      await contract.connect(admin).requestOnboarding("worker-1", owner.address);
       await contract.connect(owner).approve(30);
 
-      // Create a few more requests after it
+      // 3. Create a few more requests after it to make sure it's buried in the middle
       for (let i = 31; i < 35; i++) {
-        await contract.connect(admin).requestOnboarding(`newer-dev-${i}`, owner.address);
+        await contract.connect(admin).requestOnboarding(`filler-device-${i}`, owner.address);
       }
 
-      const status = await contract.getDeviceStatus("target-dev");
+      // 4. Verify getDeviceStatus
+      const status = await contract.getDeviceStatus("worker-1");
       expect(status).to.equal(1); // Status.Approved
+
+      // 5. Estimate and log gas used for getDeviceStatus
+      const gasEstimate = await contract.getDeviceStatus.estimateGas("worker-1");
+      console.log(`\t[Gas Cost] getDeviceStatus("worker-1") across ~35 total historical records: ${gasEstimate.toString()} gas`);
     });
 
     it("Should revert if device not found", async function () {

@@ -126,6 +126,8 @@ Questa fase ha unito le due anime del progetto (l'infrastruttura HPC e il trust 
 ### Decisioni Architetturali Note (Gas Cost `getDeviceStatus`)
 Nel contratto `OnboardingTrust.sol`, l'iterazione a ritroso implementata per risolvere l'ultima tupla in `getDeviceStatus` ha un costo in gas crescente col variare del numero totale delle transazioni storiche. Questa è stata una **decisione nota e documentata intenzionalmente tramite NatSpec** come parte del compromesso progettuale, giustificabile per interrogazioni prevalentemente off-chain, o limitate alla finestra contenuta della Proof of Concept.
 
+Per convalidare la tenuta del limite del gas, è stato introdotto **un test specifico in Hardhat** (`OnboardingTrust.test.ts`) che popola deliberatamente lo storico con 30 "filler devices" iniziali, seguiti dal "worker-1", seguiti a loro volta da ulteriori filler. In questo scenario reale (scorrere ~35 record prima di estrarre lo stato corretto), lo script stima un esborso di **circa 42.445 gas**. Questo log fornisce una baseline affidabile da monitorare per scenari futuri in cui lo storico crescerà significativamente.
+
 ### Bug Risolti & Strutturali
 Il problema più rilevante in questa fase è stato il riscontro di una **Race Condition** fatale durante la partenza dell'infrastruttura e del primo testing E2E.
 Il `gateway` e lo script di verifica E2E provavano a leggere e manipolare lo stato dei device prima che il container `auto-onboard` avesse finito di richiedere/approvare effettivamente l'onboarding di tali nodi sulla chain.
