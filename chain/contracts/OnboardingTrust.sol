@@ -83,4 +83,21 @@ contract OnboardingTrust {
         req.status = Status.Revoked;
         emit OnboardingRevoked(requestId, req.deviceId, msg.sender);
     }
+
+    /**
+     * @dev Returns the latest status of a given device by iterating backward through requests.
+     * @notice The gas cost of this function increases linearly with the total number of historical requests.
+     *         It is suitable for off-chain querying or on-chain usage only when the total request count is bounded.
+     * @param deviceId Identifier of the device.
+     * @return Status of the device. Reverts if not found.
+     */
+    function getDeviceStatus(string calldata deviceId) external view returns (Status) {
+        bytes32 targetHash = keccak256(abi.encodePacked(deviceId));
+        for (uint256 i = nextRequestId; i > 0; i--) {
+            if (keccak256(abi.encodePacked(requests[i - 1].deviceId)) == targetHash) {
+                return requests[i - 1].status;
+            }
+        }
+        revert("Device not found");
+    }
 }
