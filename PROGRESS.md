@@ -100,3 +100,13 @@
 
 ### Domande Aperte
 - Nessuna per la fase M6. M6 completato e verificato a tutto tondo.
+
+## Fase: M7 (Esperimento OpenMPI)
+
+### Task Completati
+- [x] 1. Aggiunti `openmpi-bin` e `libopenmpi-dev` al Dockerfile di `hpc-engine`.
+- [x] 2. Creato scaffold dell'esperimento `hpc-engine/src/mpi_experiment/main_mpi.cpp` e aggiornato `CMakeLists.txt` per includere `MPI` e linkare i moduli di `M5` senza modificarli.
+- [x] 3. Implementata la logica del benchmark MPI: `MPI_Init`, seed basato sul rank, reduce sul `total_verified` e `max_time`.
+- [x] 4. Implementato sanity check (validazione corretta per firma valida e fallimento atteso per firma alterata).
+- [x] 5. Esecuzione test `-np 1, 2, 4, 8` e salvataggio in `results_mpi.csv`.
+- [x] 6. Aggiornamento `hpc-engine/README.md`.
