@@ -1,30 +1,48 @@
 import asyncio
 import uuid
-from typing import List, Dict, Set
+import json
+import os
+from typing import List, Dict
 from fastapi import HTTPException
 from config import settings
+from gateway_leasing_client import GatewayLeasingClient
 
 class NodeRegistry:
     def __init__(self):
-        # All available nodes
-        self.all_nodes: List[str] = [n.strip() for n in settings.worker_nodes.split(",") if n.strip()]
-        # Set of leased nodes
-        self.leased_nodes: Set[str] = set()
-        # Mapping from pipeline_id to list of leased nodes
+        # Load directory
+        directory_path = os.path.join(os.path.dirname(__file__), "node_directory.json")
+        try:
+            with open(directory_path, "r") as f:
+                self.directory: Dict[str, str] = json.load(f)
+        except Exception as e:
+            self.directory = {}
+            
+        self.leasing_client = GatewayLeasingClient(settings.gateway_url)
+        # Mapping from pipeline_id to list of leased device_ids
         self.pipelines: Dict[str, List[str]] = {}
-        # Lock for concurrent access
         self.lock = asyncio.Lock()
 
     async def lease_nodes(self, count: int) -> str:
-        async with self.lock:
-            available = [n for n in self.all_nodes if n not in self.leased_nodes]
-            if len(available) < count:
-                raise HTTPException(status_code=400, detail=f"Not enough nodes available. Requested {count}, but only {len(available)} free.")
+        if count > len(self.directory):
+            raise HTTPException(status_code=400, detail=f"Not enough nodes in directory. Requested {count}.")
+
+        allocated = []
+        for device_id in self.directory.keys():
+            if len(allocated) == count:
+                break
             
-            allocated = available[:count]
-            for node in allocated:
-                self.leased_nodes.add(node)
-                
+            # Try to lease via gateway
+            success = await self.leasing_client.lease_node(device_id)
+            if success:
+                allocated.append(device_id)
+
+        if len(allocated) < count:
+            # Rollback
+            for device_id in allocated:
+                await self.leasing_client.release_node(device_id)
+            raise HTTPException(status_code=400, detail=f"Failed to lease {count} nodes via Gateway.")
+            
+        async with self.lock:
             pipeline_id = str(uuid.uuid4())
             self.pipelines[pipeline_id] = allocated
             return pipeline_id
@@ -33,15 +51,16 @@ class NodeRegistry:
         async with self.lock:
             if pipeline_id not in self.pipelines:
                 raise HTTPException(status_code=404, detail="Pipeline not found")
-            
             allocated = self.pipelines.pop(pipeline_id)
-            for node in allocated:
-                self.leased_nodes.discard(node)
+            
+        for device_id in allocated:
+            await self.leasing_client.release_node(device_id)
 
     async def get_pipeline_nodes(self, pipeline_id: str) -> List[str]:
         async with self.lock:
             if pipeline_id not in self.pipelines:
                 raise HTTPException(status_code=404, detail="Pipeline not found")
-            return list(self.pipelines[pipeline_id])
+            
+            return [self.directory[device_id] for device_id in self.pipelines[pipeline_id]]
 
 registry = NodeRegistry()
