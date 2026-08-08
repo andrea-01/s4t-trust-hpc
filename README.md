@@ -210,3 +210,30 @@ docker compose -f deploy/docker-compose.pipeline.yml up -d --build
 Questa fase consiste in un esperimento comparativo isolato (Step 4) volto a confrontare l'accelerazione della verifica crittografica tramite distribuzione multithread (OpenMP, introdotto in M5) con un approccio a processi isolati e distribuzione di memoria (OpenMPI).
 
 Per i dettagli dell'esperimento, l'analisi dello scaling incrociato (multithread vs multiprocesso) e la conferma della decisione architetturale originaria, si faccia riferimento al README dedicato in [hpc-engine/README.md](hpc-engine/README.md).
+
+## Fase M8: Integrazione Leasing Blockchain
+
+Questa fase integra l'orchestrazione HPC (Satellite/Worker) con lo stato di trust certificato dalla Blockchain, introducendo il contratto `LeasingRegistry.sol` (subordinato allo stato `Approved` del contratto base `OnboardingTrust.sol`).
+
+### Caratteristiche
+- **Smart Contract Dedicato**: `LeasingRegistry.sol` gestisce l'occupazione dei worker. Non sovrascrive né modifica `OnboardingTrust` (principio di separazione delle responsabilità).
+- **Gateway come Firma Unica**: Tutte le operazioni di leasing on-chain transitano dal Gateway Python, l'unico a possedere la chiave privata di amministrazione. Il Satellite non è esposto a logiche crittografiche o configurazioni di rete della chain.
+- **Onboarding Automatico dei Worker**: All'avvio dell'infrastruttura, il container effimero `auto-onboard` esegue le transazioni necessarie (richiesta + approvazione) per trustare automaticamente `worker-1`, `worker-2` e `worker-3`, colmando il gap tra infrastruttura HPC e trust decentralizzato.
+- **Gateway Leasing Client**: Nuovi endpoint (`POST /leasing/lease`, `POST /leasing/release`, `GET /leasing/status/{device_id}`) per delegare la registrazione su blockchain.
+- **Rete Condivisa**: Lo stack Pipeline e lo stack Base sono collegati in locale tramite la Docker network `s4t-bridge` pur mantenendo isolati i compose files.
+
+### Esecuzione E2E (Leasing + Pipeline)
+1. Avviare la chain e il gateway (stack base):
+   ```bash
+   cd deploy
+   docker compose up -d --build
+   ```
+2. Avviare i nodi HPC e il satellite (stack pipeline):
+   ```bash
+   docker compose -f docker-compose.pipeline.yml up -d --build
+   ```
+3. Richiedere una pipeline via Satellite (che internamente verificherà il trust ed effettuerà il lease on-chain sul Gateway):
+   ```bash
+   curl -X POST -H "Content-Type: application/json" -d '{"count": 2}' http://localhost:8001/pipeline/lease
+   ```
+   *Ora i worker risulteranno "leased" su blockchain, impedendo furti o double-spending delle risorse autorizzate!*
