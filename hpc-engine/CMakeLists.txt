@@ -13,6 +13,9 @@ find_package(OpenMP REQUIRED)
 # OpenSSL
 find_package(OpenSSL REQUIRED)
 
+# MPI
+find_package(MPI REQUIRED)
+
 include_directories(${OPENSSL_INCLUDE_DIR})
 
 # Sorgenti principali
@@ -89,3 +92,18 @@ target_link_libraries(test_worker
     PRIVATE ${GRPC_LIBRARIES} ${PROTOBUF_LIBRARIES}
 )
 add_test(NAME WorkerCorrectness COMMAND test_worker)
+
+# --- MPI per M7 ---
+add_executable(hpc_engine_mpi
+    src/mpi_experiment/main_mpi.cpp
+    src/onboarding/device_generator.cpp
+    src/onboarding/signature_bench.cpp
+    src/onboarding/csv_writer.cpp
+)
+target_include_directories(hpc_engine_mpi PRIVATE src/onboarding)
+target_link_libraries(hpc_engine_mpi
+    PRIVATE MPI::MPI_CXX
+    PRIVATE OpenMP::OpenMP_CXX
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
+)
