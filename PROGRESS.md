@@ -110,3 +110,31 @@
 - [x] 4. Implementato sanity check (validazione corretta per firma valida e fallimento atteso per firma alterata).
 - [x] 5. Esecuzione test `-np 1, 2, 4, 8` e salvataggio in `results_mpi.csv`.
 - [x] 6. Aggiornamento `hpc-engine/README.md`.
+
+## Fase: M8 (Integrazione Leasing Blockchain)
+
+### Task Completati
+Questa fase ha unito le due anime del progetto (l'infrastruttura HPC e il trust decentralizzato su chain), gestendo il ciclo di vita dei worker in base al loro stato effettivo sulla Blockchain. Il lavoro è stato organizzato e unito in **6 commit testati**:
+
+1. **`feat(chain): M8 add LeasingRegistry and device status query`**: Aggiunta della query di stato su `OnboardingTrust.sol` e creazione dello smart contract isolato `LeasingRegistry.sol`.
+2. **`feat(chain): M8 automatic onboarding of worker nodes`**: Creazione dello script TypeScript effimero `auto-onboard-workers.ts` e aggiornamento di `deploy.ts` per istanziare e registrare la trustnet automaticamente all'avvio dell'infrastruttura.
+3. **`feat(gateway): M8 gateway endpoints for blockchain leasing`**: Integrazione di `leasing_client.py` e nuovi endpoint nel Gateway (tramite `web3.py` e Pydantic) per mediare con lo smart contract.
+4. **`refactor(satellite): M8 migrate from in-memory to real gateway leasing`**: Rimossa la gestione in memoria dal Satellite. Ora i task orchestrati delegano il tracciamento dei lock all'effettivo leasing on-chain tramite API HTTP verso il Gateway.
+5. **`chore(deploy): M8 shared network and auto-onboard service`**: Creazione della rete bridge condivisa (`s4t-bridge`) tra i due Compose stack isolati e configurazione del servizio `auto-onboard`.
+6. **`docs: M8 update README, .gitignore and E2E test script`**: Completamento della documentazione architetturale nel README, pulizia dei path hardhat generati dal tracciamento git e spostamento strategico dello script end-to-end (`run_e2e.sh`).
+
+### Decisioni Architetturali Note (Gas Cost `getDeviceStatus`)
+Nel contratto `OnboardingTrust.sol`, l'iterazione a ritroso implementata per risolvere l'ultima tupla in `getDeviceStatus` ha un costo in gas crescente col variare del numero totale delle transazioni storiche. Questa è stata una **decisione nota e documentata intenzionalmente tramite NatSpec** come parte del compromesso progettuale, giustificabile per interrogazioni prevalentemente off-chain, o limitate alla finestra contenuta della Proof of Concept.
+
+### Bug Risolti & Strutturali
+Il problema più rilevante in questa fase è stato il riscontro di una **Race Condition** fatale durante la partenza dell'infrastruttura e del primo testing E2E.
+Il `gateway` e lo script di verifica E2E provavano a leggere e manipolare lo stato dei device prima che il container `auto-onboard` avesse finito di richiedere/approvare effettivamente l'onboarding di tali nodi sulla chain.
+Questo portava il Gateway a rifiutare costantemente le risorse restituendo l'eccezione interna `Device not found`.
+
+**Risoluzione**: La fix è stata applicata **strutturalmente** nel file `docker-compose.yml`, introducendo per il servizio gateway l'obbligo formale di aspettare la corretta conclusione del task:
+```yaml
+    depends_on:
+      auto-onboard:
+        condition: service_completed_successfully
+```
+Tramite questa correzione, l'architettura attende intrinsecamente che la sincronizzazione fittizia dei worker sulla blockchain sia stata interamente scritta, sigillando la race condition all'avvio.
