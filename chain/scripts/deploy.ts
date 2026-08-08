@@ -33,6 +33,29 @@ async function main() {
         JSON.stringify(deployData, null, 2)
     );
     console.log("Deployment info saved to deployments/localhost.json");
+
+    // Deploy LeasingRegistry
+    console.log("Deploying LeasingRegistry contract...");
+    const LeasingRegistry = await ethers.getContractFactory("LeasingRegistry");
+    const leasingContract = await LeasingRegistry.deploy(address);
+    await leasingContract.waitForDeployment();
+
+    const leasingAddress = await leasingContract.getAddress();
+    const leasingBlock = await ethers.provider.getBlockNumber();
+    console.log(`LeasingRegistry deployed to: ${leasingAddress} at block ${leasingBlock}`);
+
+    const leasingDeployData = {
+        address: leasingAddress,
+        blockNumber: leasingBlock,
+        network: (await ethers.provider.getNetwork()).name,
+        timestamp: new Date().toISOString()
+    };
+    
+    fs.writeFileSync(
+        path.join(deployDir, "leasing-localhost.json"), 
+        JSON.stringify(leasingDeployData, null, 2)
+    );
+    console.log("LeasingRegistry deployment info saved to deployments/leasing-localhost.json");
 }
 
 main().catch((error) => {
