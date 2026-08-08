@@ -204,3 +204,9 @@ docker compose -f deploy/docker-compose.pipeline.yml up -d --build
 
 4. **Test di Concorrenza (Doppio Leasing)**:
    Se si prova ad affittare nodi già occupati, il sistema rifiuterà la richiesta (`400 Not enough nodes available`), prevenendo race condition.
+
+## Fase M7: Esperimento OpenMPI
+
+Questa fase consiste in un esperimento comparativo isolato (Step 4) volto a confrontare l'accelerazione della verifica crittografica tramite distribuzione multithread (OpenMP, introdotto in M5) con un approccio a processi isolati e distribuzione di memoria (OpenMPI).
+
+Per i dettagli dell'esperimento, l'analisi dello scaling incrociato (multithread vs multiprocesso) e la conferma della decisione architetturale originaria, si faccia riferimento al README dedicato in [hpc-engine/README.md](hpc-engine/README.md).
