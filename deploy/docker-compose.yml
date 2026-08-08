@@ -73,10 +73,13 @@ services:
       - DEPLOYMENTS_PATH=/app/deployments/localhost.json
       - ABI_PATH=/app/artifacts/contracts/OnboardingTrust.sol/OnboardingTrust.json
     depends_on:
+      auto-onboard:
+        condition: service_completed_successfully
       contract-deployer:
         condition: service_completed_successfully
     networks:
       - trust-hpc-net
+      - s4t-bridge
 
   mailpit:
     image: axllent/mailpit
@@ -126,6 +129,26 @@ services:
     networks:
       - trust-hpc-net
 
+  auto-onboard:
+    build:
+      context: ../chain
+      dockerfile: Dockerfile
+    command: ["npx", "hardhat", "run", "scripts/auto-onboard-workers.ts", "--network", "docker"]
+    env_file:
+      - .env
+    volumes:
+      - ../chain/deployments:/app/deployments
+      - ../chain/artifacts:/app/artifacts
+    depends_on:
+      hardhat-node:
+        condition: service_healthy
+      contract-deployer:
+        condition: service_completed_successfully
+    networks:
+      - trust-hpc-net
+
 networks:
   trust-hpc-net:
     driver: bridge
+  s4t-bridge:
+    external: true

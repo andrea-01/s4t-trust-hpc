@@ -41,6 +41,7 @@ services:
       - WORKER_NODES=worker-1:50051,worker-2:50051,worker-3:50051
     networks:
       - pipeline-net
+      - s4t-bridge
     depends_on:
       - worker-1
       - worker-2
@@ -49,3 +50,5 @@ services:
 networks:
   pipeline-net:
     driver: bridge
+  s4t-bridge:
+    external: true
