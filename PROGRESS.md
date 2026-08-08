@@ -2,7 +2,6 @@
 
 ## Sessione Attuale
 **Data:** 2026-08-05
-**Fase:** M5
 
 ### Task Completati
 - [x] M0: Scaffolding repo e placeholder creati.
