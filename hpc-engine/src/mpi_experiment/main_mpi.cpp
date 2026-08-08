@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
     // Wait for rank 0 to finish sanity check
     MPI_Barrier(MPI_COMM_WORLD);
 
-    const size_t total_batch_size = 10000;
+    const size_t total_batch_size = (argc > 1) ? std::stoull(argv[1]) : 500;
     
     // Determine this rank's share
     size_t local_batch_size = total_batch_size / size;

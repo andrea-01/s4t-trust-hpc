@@ -1,0 +1,5 @@
+model,batch_size,num_threads,time_seconds,throughput
+mpi,10000,1,0.608097,16444.7
+mpi,10000,2,0.322523,31005.6
+mpi,10000,4,0.154783,64606.7
+mpi,10000,8,0.140224,71314.5

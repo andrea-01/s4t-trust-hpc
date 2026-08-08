@@ -45,28 +45,28 @@ Nonostante questo collo di bottiglia, scalando a 4 e 8 thread le performance aum
 
 ## Esperimento OpenMPI (M7 - Step 4)
 
-L'esperimento M7 esegue un confronto isolato distribuendo il medesimo carico (10000 verifiche complessive) su processi OpenMPI. L'obiettivo è quantificare l'eventuale overhead o vantaggio derivante dal modello multiprocesso a memoria distribuita rispetto all'approccio multithread di OpenMP.
+L'esperimento M7 esegue un confronto isolato distribuendo il medesimo carico (500 verifiche complessive, in linea con l'esperimento originale M5) su processi OpenMPI. L'obiettivo è quantificare l'eventuale overhead o vantaggio derivante dal modello multiprocesso a memoria distribuita rispetto all'approccio multithread di OpenMP.
 
 Per eseguire l'esperimento:
 ```bash
-docker run --rm -v $(pwd):/app -w /app hpc-engine-m7 bash -c "for np in 1 2 4 8; do mpirun --allow-run-as-root -np \$np ./build/hpc_engine_mpi; done"
+docker run --rm -v $(pwd):/app -w /app hpc-engine-m7 bash -c "for np in 1 2 4 8; do mpirun --allow-run-as-root -np \$np ./build/hpc_engine_mpi 500; done"
 ```
 
 ### Risultati e Confronto
 
-Tabella comparativa (throughput in verifiche/sec):
+Tabella comparativa (throughput in verifiche/sec, batch 500):
 
 | Worker/Thread | OpenMP (M5) | OpenMPI (M7) |
 |---------------|-------------|--------------|
-| 1             | ~17,700     | ~16,400      |
-| 2             | ~23,200     | ~31,000      |
-| 4             | ~35,400     | ~64,600      |
-| 8             | ~67,400     | ~71,300      |
+| 1             | ~17,700     | ~16,500      |
+| 2             | ~23,200     | ~30,300      |
+| 4             | ~35,400     | ~48,900      |
+| 8             | ~67,400     | ~59,800      |
 
 ### Interpretazione
 
-1. **Scalabilità Lineare MPI vs Contention OpenMP**: Il risultato più rilevante è che **OpenMPI scala in modo quasi perfettamente lineare** da 1 a 4 processi (16.4k → 31.0k → 64.6k), a differenza di OpenMP. Questo conferma la diagnosi del benchmark M5: la perdita di scalabilità in OpenMP (17.7k → 23.2k) è imputabile alla *lock contention* dell'allocatore di memoria di sistema condiviso durante la chiamata `EVP_MD_CTX_new()`. In OpenMPI, poiché ogni rank è un processo del sistema operativo separato con il proprio heap e il proprio lock di allocazione indipendente, la contention sparisce completamente.
-2. **Overhead di Processo**: L'approccio OpenMPI mostra un lieve overhead per rank singolo (16.4k vs 17.7k), presumibilmente a causa dei costi di startup di `MPI_Init` e delle primitive di reduce.
+1. **Scalabilità a Bassi Core (MPI vs Contention OpenMP)**: Inizialmente, passando da 1 a 2 processi, **OpenMPI scala meglio** (16.5k → 30.3k). Questo conferma la diagnosi del benchmark M5: la perdita di scalabilità in OpenMP (17.7k → 23.2k) ai primi core è imputabile alla *lock contention* dell'allocatore condiviso durante la chiamata `EVP_MD_CTX_new()`. In OpenMPI, poiché ogni rank è un processo separato con il proprio heap, la contention sparisce.
+2. **Crossover e Overhead di Sincronizzazione MPI**: Scalando da 4 a 8 processi su un batch totale fisso (500), si assiste a un **crossover**: MPI si appiattisce visibilmente (+20%, da 48.9k a 59.8k), mentre OpenMP quasi raddoppia (+90%, da 35.4k a 67.4k). La spiegazione risiede nel rapporto tra carico utile e *overhead*. Con 8 processi su 500 task totali, ogni rank MPI esegue solo ~62 verifiche. Il lavoro utile per processo si riduce così tanto che il costo fisso di inizializzazione (`MPI_Init`), lo startup multiprocesso e la sincronizzazione (`MPI_Reduce`) di MPI — strutturalmente più pesanti dello startup di un thread OpenMP — diventa il fattore dominante (Amdahl's law effect). Al crescere vertiginoso del carico (es. batch da 10.000, tracciati in `results_mpi_10k.csv`), l'overhead MPI si diluisce nel lungo tempo di calcolo e le due soluzioni tornano a competere alla pari (71.3k per MPI a 8 processi contro i 67.4k di OpenMP).
 
 ### Decisione Architetturale Confermata
 
