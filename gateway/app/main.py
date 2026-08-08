@@ -9,6 +9,7 @@ from app.config import settings
 leasing_client = LeasingClient(
     rpc_url=settings.rpc_url,
     deployments_path=settings.leasing_deployments_path,
+    abi_path=settings.leasing_abi_path,
     private_key=settings.admin_private_key
 )
 

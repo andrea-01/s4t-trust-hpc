@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     deployments_path: str = "/app/deployments/localhost.json"
     leasing_deployments_path: str = "/app/deployments/leasing-localhost.json"
     abi_path: str = "/app/artifacts/contracts/OnboardingTrust.sol/OnboardingTrust.json"
+    leasing_abi_path: str = "/app/artifacts/contracts/LeasingRegistry.sol/LeasingRegistry.json"
     poll_interval: int = 5
     admin_private_key: str
     

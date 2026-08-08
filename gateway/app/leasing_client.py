@@ -7,24 +7,21 @@ from pydantic_settings import BaseSettings
 logger = logging.getLogger(__name__)
 
 class LeasingClient:
-    def __init__(self, rpc_url: str, deployments_path: str, private_key: str):
+    def __init__(self, rpc_url: str, deployments_path: str, abi_path: str, private_key: str):
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
         self.private_key = private_key
         
         # We need the admin account to sign transactions
         self.account = self.w3.eth.account.from_key(private_key)
         
-        # Load ABI and address from leasing-localhost.json
         try:
+            # Load contract address from deployments
             with open(deployments_path, 'r') as f:
                 deploy_data = json.load(f)
                 self.contract_address = Web3.to_checksum_address(deploy_data['address'])
             
-            # Use ABI of LeasingRegistry. Since we don't have it directly in the deployments JSON,
-            # we will load it from artifacts, but the instruction said "legge ABI/indirizzo da leasing-localhost.json via volume".
-            # Actually, `leasing-localhost.json` only contains the address/block/network, not the full ABI.
-            # We'll load the ABI from the artifacts folder.
-            with open('/app/artifacts/contracts/LeasingRegistry.sol/LeasingRegistry.json', 'r') as f:
+            # Load contract ABI from artifacts
+            with open(abi_path, 'r') as f:
                 artifact = json.load(f)
                 self.abi = artifact['abi']
                 
