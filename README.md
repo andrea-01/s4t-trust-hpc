@@ -223,16 +223,20 @@ Questa fase integra l'orchestrazione HPC (Satellite/Worker) con lo stato di trus
 - **Rete Condivisa**: Lo stack Pipeline e lo stack Base sono collegati in locale tramite la Docker network `s4t-bridge` pur mantenendo isolati i compose files.
 
 ### Esecuzione E2E (Leasing + Pipeline)
-1. Avviare la chain e il gateway (stack base):
+1. Creare la rete condivisa (da eseguire una sola volta prima di avviare uno qualsiasi dei due stack. Va ricreata solo se rimossa esplicitamente, non ad ogni riavvio):
+   ```bash
+   docker network create s4t-bridge
+   ```
+2. Avviare la chain e il gateway (stack base):
    ```bash
    cd deploy
    docker compose up -d --build
    ```
-2. Avviare i nodi HPC e il satellite (stack pipeline):
+3. Avviare i nodi HPC e il satellite (stack pipeline):
    ```bash
    docker compose -f docker-compose.pipeline.yml up -d --build
    ```
-3. Richiedere una pipeline via Satellite (che internamente verificherà il trust ed effettuerà il lease on-chain sul Gateway):
+4. Richiedere una pipeline via Satellite (che internamente verificherà il trust ed effettuerà il lease on-chain sul Gateway):
    ```bash
    curl -X POST -H "Content-Type: application/json" -d '{"count": 2}' http://localhost:8001/pipeline/lease
    ```
