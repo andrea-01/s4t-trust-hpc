@@ -20,9 +20,38 @@ async def dashboard(request: Request):
     except GatewayUnavailableError as e:
         error_message = str(e)
     
+    requests_dict = {}
+    for event in events:
+        args = event.get("args", {})
+        req_id = args.get("requestId")
+        if req_id is not None:
+            if req_id not in requests_dict:
+                requests_dict[req_id] = {
+                    "requestId": req_id,
+                    "deviceId": args.get("deviceId", "N/A"),
+                    "owner": args.get("owner", "N/A"),
+                    "status": "Unknown"
+                }
+            if args.get("deviceId"):
+                requests_dict[req_id]["deviceId"] = args.get("deviceId")
+            if args.get("owner"):
+                requests_dict[req_id]["owner"] = args.get("owner")
+                
+            evt_type = event.get("event")
+            if evt_type == "OnboardingRequested":
+                requests_dict[req_id]["status"] = "Pending"
+            elif evt_type == "OnboardingApproved":
+                requests_dict[req_id]["status"] = "Approved"
+            elif evt_type == "OnboardingRejected":
+                requests_dict[req_id]["status"] = "Rejected"
+            elif evt_type == "OnboardingRevoked":
+                requests_dict[req_id]["status"] = "Revoked"
+
+    aggregated_requests = list(requests_dict.values())
+    
     return templates.TemplateResponse(
         "dashboard.html", 
-        {"request": request, "events": events, "error_message": error_message}
+        {"request": request, "requests": aggregated_requests, "error_message": error_message}
     )
 
 @app.get("/api/requests")
@@ -47,9 +76,39 @@ async def create_request(request: Request, device_id: str = Form(...), owner_add
             events = await gateway_client.get_recent_events()
         except GatewayUnavailableError:
             pass
+            
+        requests_dict = {}
+        for event in events:
+            args = event.get("args", {})
+            req_id = args.get("requestId")
+            if req_id is not None:
+                if req_id not in requests_dict:
+                    requests_dict[req_id] = {
+                        "requestId": req_id,
+                        "deviceId": args.get("deviceId", "N/A"),
+                        "owner": args.get("owner", "N/A"),
+                        "status": "Unknown"
+                    }
+                if args.get("deviceId"):
+                    requests_dict[req_id]["deviceId"] = args.get("deviceId")
+                if args.get("owner"):
+                    requests_dict[req_id]["owner"] = args.get("owner")
+                    
+                evt_type = event.get("event")
+                if evt_type == "OnboardingRequested":
+                    requests_dict[req_id]["status"] = "Pending"
+                elif evt_type == "OnboardingApproved":
+                    requests_dict[req_id]["status"] = "Approved"
+                elif evt_type == "OnboardingRejected":
+                    requests_dict[req_id]["status"] = "Rejected"
+                elif evt_type == "OnboardingRevoked":
+                    requests_dict[req_id]["status"] = "Revoked"
+
+        aggregated_requests = list(requests_dict.values())
+        
         return templates.TemplateResponse(
             "dashboard.html",
-            {"request": request, "events": events, "error_message": error_message}
+            {"request": request, "requests": aggregated_requests, "error_message": error_message}
         )
         
     return RedirectResponse(url="/", status_code=303)

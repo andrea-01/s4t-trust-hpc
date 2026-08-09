@@ -12,19 +12,19 @@
 <table id="requests-table">
     <thead>
         <tr>
-            <th>Event Name</th>
+            <th>Status</th>
             <th>Device ID</th>
             <th>Owner Address</th>
             <th>Request ID</th>
         </tr>
     </thead>
     <tbody>
-        {% for event in events %}
+        {% for req in requests %}
         <tr>
-            <td>{{ event.event }}</td>
-            <td>{{ event.args.deviceId | default('N/A') }}</td>
-            <td>{{ event.args.owner | default('N/A') }}</td>
-            <td>{{ event.args.requestId | default('N/A') }}</td>
+            <td>{{ req.status }}</td>
+            <td>{{ req.deviceId | default('N/A') }}</td>
+            <td>{{ req.owner | default('N/A') }}</td>
+            <td>{{ req.requestId | default('N/A') }}</td>
         </tr>
         {% else %}
         <tr>

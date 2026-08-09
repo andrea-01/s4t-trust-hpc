@@ -62,3 +62,13 @@ class EventPoller:
         return self.events_cache[-limit:]
 
 event_poller = EventPoller()
+                        "args": dict(log.args)
+                    }
+                    self.events_cache.append(event_data)
+            except Exception as e:
+                print(f"Error fetching event {event_type.event_name}: {e}")
+                
+    def get_recent_events(self, limit: int = 50) -> List[Dict]:
+        return self.events_cache[-limit:]
+
+event_poller = EventPoller()
