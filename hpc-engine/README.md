@@ -43,6 +43,32 @@ Nonostante questo collo di bottiglia, scalando a 4 e 8 thread le performance aum
 
 ---
 
+## Worker gRPC per Pipeline Multi-Nodo (M6)
+
+La fase M6 introduce il **worker gRPC** (implementato in `src/pipeline/`). A differenza dei benchmark isolati (M5/M7), questo componente è un vero demone di produzione progettato per ascoltare task di calcolo (es. il task predefinito `INCREMENT_COUNTER` o rispondere con errore `UNIMPLEMENTED` a task sconosciuti).
+Questo server gRPC costituisce il target fisico di esecuzione della pipeline, coordinato centralmente dal satellite.
+
+### Compilazione ed Esecuzione (Isolamento)
+
+Il componente utilizza l'infrastruttura CMake principale ma definisce un proprio target di build dedicato, `pipeline_worker`.
+Può essere eseguito localmente o tramite il container (es. con il tag `deploy-worker-1`). L'entrypoint (`main_worker.cpp`) dipende dalle seguenti variabili d'ambiente:
+- `PORT`: Porta di ascolto gRPC (default: `50051`)
+- `NODE_ID`: L'identificativo esatto del device associato a questo worker, utile in log e debug (default: `worker-default`)
+
+### Esecuzione dei Test
+
+I test dedicati al worker verificano in locale i metodi base (`Ping` ed `ExecuteTask`) avviando un server in background. Si richiamano tramite CTest eseguendo la specifica test suite registrata nel `CMakeLists.txt`:
+```bash
+docker run --rm -v $(pwd):/app -w /app hpc-engine-build bash -c "cd build && ctest -V -R WorkerCorrectness"
+```
+
+### Contesto End-to-End
+
+Da solo il worker gRPC rimane passivo e non fa nulla. Per testare il vero flusso distribuito del progetto (lease dei nodi, distribuzione dei task paralleli e successivo release) fai riferimento al demone in Python:
+👉 **[satellite/README.md](../satellite/README.md)**
+
+---
+
 ## Esperimento OpenMPI (M7 - Step 4)
 
 L'esperimento M7 esegue un confronto isolato distribuendo il medesimo carico (500 verifiche complessive, in linea con l'esperimento originale M5) su processi OpenMPI. L'obiettivo è quantificare l'eventuale overhead o vantaggio derivante dal modello multiprocesso a memoria distribuita rispetto all'approccio multithread di OpenMP.
