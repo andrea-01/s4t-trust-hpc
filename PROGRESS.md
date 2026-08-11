@@ -128,14 +128,20 @@ Nel contratto `OnboardingTrust.sol`, l'iterazione a ritroso implementata per ris
 Per convalidare la tenuta del limite del gas, è stato introdotto **un test specifico in Hardhat** (`OnboardingTrust.test.ts`) che popola deliberatamente lo storico con 30 "filler devices" iniziali, seguiti dal "worker-1", seguiti a loro volta da ulteriori filler. In questo scenario reale (scorrere ~35 record prima di estrarre lo stato corretto), lo script stima un esborso di **circa 42.445 gas**. Questo log fornisce una baseline affidabile da monitorare per scenari futuri in cui lo storico crescerà significativamente.
 
 ### Bug Risolti & Strutturali
-Il problema più rilevante in questa fase è stato il riscontro di una **Race Condition** fatale durante la partenza dell'infrastruttura e del primo testing E2E.
-Il `gateway` e lo script di verifica E2E provavano a leggere e manipolare lo stato dei device prima che il container `auto-onboard` avesse finito di richiedere/approvare effettivamente l'onboarding di tali nodi sulla chain.
-Questo portava il Gateway a rifiutare costantemente le risorse restituendo l'eccezione interna `Device not found`.
 
-**Risoluzione**: La fix è stata applicata **strutturalmente** nel file `docker-compose.yml`, introducendo per il servizio gateway l'obbligo formale di aspettare la corretta conclusione del task:
-```yaml
-    depends_on:
-      auto-onboard:
-        condition: service_completed_successfully
-```
-Tramite questa correzione, l'architettura attende intrinsecamente che la sincronizzazione fittizia dei worker sulla blockchain sia stata interamente scritta, sigillando la race condition all'avvio.
+## Fase: M9 (Integrazione IoTronic - Stadio 9.1)
+
+### Task Completati
+- [x] 1. Clone repository esterno `Stack4Things_DockerCompose_deployment` come sibling directory rispetto al mono-repo.
+- [x] 2. Deploy dello stack IoTronic tramite `docker-compose.yml`. (Nessun file originale è stato patchato; è stato utilizzato un `docker-compose.override.yml` per correggere il placeholder dell'immagine `lightning-rod` fallata).
+- [x] 3. Verifica dei servizi (Conductor e Crossbar attivi).
+- [x] 4. Ricerca e studio del meccanismo dei plugin IoTronic: i plugin sono classi Python (estensioni di `Worker` da `Plugin.Plugin`) con setup asincrono/sincrono tramite code per il ritorno dei risultati.
+- [x] 5. Analisi comparativa con l'Outline originario documentata in `s4t-plugin/IOTRONIC_NOTES.md`.
+- [x] 6. Stesura del codice del plugin "hello world" (`s4t-plugin/hello_world_test/plugin.py`).
+
+### Note (Fase M9.1)
+- L'emulatore per la board (Lightning-Rod) è integrato nativamente come container all'interno dello stack compose del progetto IoTronic (`mdslab/lrod:compose`), rendendo inutile un ambiente custom, coerentemente con le indicazioni della documentazione di S4T.
+- L'automazione browser (Browser Subagent) ha riscontrato un errore nel connettersi al CDP port per l'onboarding automatico via UI. Per cui la registrazione della board è stata delegata manualmente all'utente (via interazione `ask_question`).
+
+### Domande Aperte & Test finali
+- **Test completato:** In seguito alla registrazione manuale della board, il plugin "hello world" è stato correttamente iniettato e mandato in esecuzione tramite il container `iotronic-ui`, usando l'azione nativa `PluginCall`, che ha restituito correttamente l'output `SUCCESS: Hello from S4T Plugin!`. La fase 9.1 si conclude con successo.
