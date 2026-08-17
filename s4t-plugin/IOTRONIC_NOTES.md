@@ -37,3 +37,19 @@ Come richiesto, ecco un confronto esplicito tra quanto rilevato ora e le ipotesi
 
 ## Esempio Plugin "Hello World"
 È stato redatto un plugin minimale (in `/s4t-plugin/hello_world_test/plugin.py`) pronto all'iniezione non appena la board sarà confermata online (via onboarding manuale utente). Il plugin semplicemente legge eventuali parametri e restituisce una stringa di conferma, dimostrando l'operatività del `q_result`.
+
+## Integrazione gRPC e completamento Stadio 9.2
+
+Durante lo Stadio 9.2 l'integrazione è stata concretizzata trasformando il plugin "hello world" (presente in `hello_world_test/`, che ora funge solo da scaffold di riferimento storico della fase 9.1) in un vero client gRPC verso il worker HPC in C++.
+
+### Flusso di Build e Iniezione
+- È stato sviluppato un template (`plugin_template.py`) e uno script di build (`build_plugin.sh`).
+- Poiché IoTronic accetta un singolo file Python come plugin, lo script di build compila i file protobuf (utilizzando il container `satellite`), li comprime in uno `.zip`, codifica lo zip in Base64 e lo inietta direttamente nel file sorgente del plugin.
+- A runtime, il plugin decodifica il Base64, salva lo `.zip` nel container di Lightning-Rod e lo aggiunge al `sys.path` per l'importazione.
+- È stato necessario applicare un patch automatico (`sed`) nel flusso di build per retro-compatibilità, eliminando l'argomento `_registered_method=True` dai file gRPC generati, in quanto incompatibile con le versioni di `grpcio` (1.62.x) disponibili per Python 3.7 nell'emulatore.
+
+### Gestione delle Dipendenze a Runtime
+Come ipotizzato, la libreria `grpcio` (e `protobuf`) non era presente nell'immagine di base di Lightning-Rod. Il problema è stato aggirato inserendo nel plugin un blocco `try/except ImportError` che, in caso di libreria mancante, effettua una installazione dinamica e idempotente tramite `subprocess.check_call(["pip", "install", "grpcio", "protobuf"])`.
+
+### Risultato Test End-to-End
+Il test si è concluso con successo. Utilizzando l'azione `PluginCall`, il comando `iotronic plugin-action test_board grpc_client PluginCall --params input_value=42` ha inviato correttamente la richiesta al worker remoto gRPC (`deploy-worker-1-1:50051`). Il worker ha risposto processando l'operazione (`INCREMENT_COUNTER`), e il plugin ha restituito correttamente l'output `SUCCESS: Worker worker-1 incremented 42 -> 43` tramite l'infrastruttura di ritorno asincrona IoTronic/WAMP.

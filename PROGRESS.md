@@ -169,4 +169,4 @@ Tramite questa correzione, l'architettura attende intrinsecamente che la sincron
 - [x] 5. Configurazione cross-compatibilità: patch automatico del codice generato da `grpc_tools.protoc` per rimuovere i keyword args incompatibili con Python 3.7.
 - [x] 6. Esecuzione end-to-end con esito positivo: `PluginCall` inietta un task gRPC `INCREMENT_COUNTER(42)` all'`hpc-engine` worker C++ (`deploy-worker-1-1:50051`) e riceve `43` in risposta, confermando la connettività di rete bidirezionale!
 
-L'integrazione di M9 è ufficialmente conclusa con successo.
+Lo Stadio 9.2 si conclude con successo; resta da pianificare ed eseguire lo Stadio 9.3.
