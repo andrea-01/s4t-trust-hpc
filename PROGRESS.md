@@ -158,3 +158,15 @@ Tramite questa correzione, l'architettura attende intrinsecamente che la sincron
 - **Test completato:** In seguito alla registrazione manuale della board, il plugin "hello world" è stato correttamente iniettato e mandato in esecuzione tramite il container `iotronic-ui`, usando l'azione nativa `PluginCall`, che ha restituito correttamente l'output `SUCCESS: Hello from S4T Plugin!`. La fase 9.1 si conclude con successo.
 - **In attesa (M9.2):** La dipendenza `grpcio`, fondamentale per connettersi al worker C++ dell'HPC Engine, potrebbe non essere presente sull'immagine `mdslab/lrod:compose`. Da verificare e risolvere in fase M9.2 prima dello sviluppo del vero plugin di offloading.
 
+
+## Fase: M9 (Integrazione IoTronic - Stadio 9.2)
+
+### Task Completati
+- [x] 1. Ripristino del networking dello stack IoTronic tramite `docker-compose.override.yml`, connettendo `lightning-rod` a `s4t` e `s4t-bridge`.
+- [x] 2. Soluzione del crash in fase di avvio di `lightning-rod` fornendo il pre-registration file `settings.json` corretto, risolvendo l'errore `NoneType`.
+- [x] 3. Sviluppo del client gRPC reale nel plugin: `plugin_template.py` + `build_plugin.sh`.
+- [x] 4. Installazione idempotente dinamica a runtime di `grpcio` e `protobuf` per aggirare l'assenza sul container `lrod:compose`.
+- [x] 5. Configurazione cross-compatibilità: patch automatico del codice generato da `grpc_tools.protoc` per rimuovere i keyword args incompatibili con Python 3.7.
+- [x] 6. Esecuzione end-to-end con esito positivo: `PluginCall` inietta un task gRPC `INCREMENT_COUNTER(42)` all'`hpc-engine` worker C++ (`deploy-worker-1-1:50051`) e riceve `43` in risposta, confermando la connettività di rete bidirezionale!
+
+L'integrazione di M9 è ufficialmente conclusa con successo.

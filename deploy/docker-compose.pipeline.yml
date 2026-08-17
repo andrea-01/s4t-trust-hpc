@@ -8,6 +8,7 @@ services:
       - NODE_ID=worker-1
     networks:
       - pipeline-net
+      - s4t-bridge
 
   worker-2:
     build:
@@ -18,6 +19,7 @@ services:
       - NODE_ID=worker-2
     networks:
       - pipeline-net
+      - s4t-bridge
 
   worker-3:
     build:
@@ -28,6 +30,7 @@ services:
       - NODE_ID=worker-3
     networks:
       - pipeline-net
+      - s4t-bridge
 
   satellite:
     build:
