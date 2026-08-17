@@ -23,6 +23,7 @@ chain/cache/
 # GRPC Generated Stubs
 **/*_pb2.py
 **/*_pb2_grpc.py
+s4t-plugin/plugin_bundle.py
 
 # Build and compiled artifacts
 build/
