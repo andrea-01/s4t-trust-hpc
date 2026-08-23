@@ -53,3 +53,22 @@ Come ipotizzato, la libreria `grpcio` (e `protobuf`) non era presente nell'immag
 
 ### Risultato Test End-to-End
 Il test si è concluso con successo. Utilizzando l'azione `PluginCall`, il comando `iotronic plugin-action test_board grpc_client PluginCall --params input_value=42` ha inviato correttamente la richiesta al worker remoto gRPC (`deploy-worker-1-1:50051`). Il worker ha risposto processando l'operazione (`INCREMENT_COUNTER`), e il plugin ha restituito correttamente l'output `SUCCESS: Worker worker-1 incremented 42 -> 43` tramite l'infrastruttura di ritorno asincrona IoTronic/WAMP.
+
+## Fase M9.3 - Fase 1 Investigazione
+
+1. **Analisi chiamata REST (PluginCall)**: L'esecuzione tramite CLI di `iotronic plugin-action` effettua internamente una chiamata **REST HTTP POST** sincrona:
+   - **URL**: `POST /v1/boards/{board_name}/plugins/{plugin_name}`
+   - **Headers**: Richiede autenticazione Keystone via `X-Auth-Token` e header standard come `X-OpenStack-Iotronic-API-Version: 1.0`.
+   - **Payload JSON**: `{"action": "PluginCall", "parameters": {"<key>": "<value>"}}`
+   - **Comportamento sincrono**: L'endpoint blocca l'HTTP request in attesa che la board, via WAMP/crossbar, completi l'esecuzione e restituisca il risultato. In caso di errore (es. plugin assente o board offline), la connessione HTTP va in timeout. Non è necessario alcun meccanismo di polling o read differita; il risultato è contenuto nel body della risposta HTTP una volta risolta.
+
+2. **Compatibilità nomi Board**: Le board possono essere registrate con lo stesso identificativo del `device_id` dell'HPC-Engine (es. `worker-1`, `worker-2`, `worker-3`). Non ci sono conflitti con namespace IoTronic. L'inserimento ha avuto successo sebbene la CLI openstack-iotronicclient sollevi un warning apparente alla fine del processo di creazione, i record persistono correttamente nel database con stato `registered`.
+
+
+### Problema Noto: Wampagent Stale (Crash-Loop di Lightning-Rod)
+- **Sintomo**: I container `lightning-rod` vanno in crash-loop all'avvio con l'errore `no callee registered for procedure <e56fea1fa400.stack4things.connection>`. Il log indica che la board crede di essere `operative` ma tenta di connettersi a un agent inesistente (`e56fea1fa400`).
+- **Causa**: Il container `iotronic-wagent` aveva registrato il suo hostname (`e56fea1fa400`) nel database giorni prima. Alla sua ricreazione (con un nuovo container ID/hostname), il vecchio record è rimasto in tabella `wampagents` con `online=1`. Il Conductor, usando `get_best_agent()`, ha continuato ad assegnare l'agent "fantasma" obsoleto alle nuove board che effettuavano la registrazione (`stack4things.register`). Il Conductor memorizza la configurazione iniziale in DB (colonna `config` della tabella `boards`), quindi ai successivi riavvii le board ricevevano sempre la configurazione "velenata".
+- **Soluzione**:
+  1. Rimuovere il record obsoleto: `DELETE FROM wampagents WHERE hostname='<vecchio_hostname>';` e riavviare il container `iotronic-wagent`.
+  2. Forzare la rigenerazione della configurazione per le board: `UPDATE boards SET status='registered', agent=NULL, config=NULL WHERE name LIKE 'worker-%';`.
+  3. Pulire il file `/etc/iotronic/settings.json` sui `lightning-rod` container inietando una configurazione pulita per forzare il first-boot.
