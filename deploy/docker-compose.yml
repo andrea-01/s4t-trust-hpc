@@ -65,7 +65,7 @@ services:
     env_file:
       - .env
     environment:
-      - TRUSTED_DEVICES_CONFIG=/app/scripts/trusted-devices.json
+      - TRUSTED_DEVICES_CONFIG=/app/config/trusted-devices.json
     volumes:
       - ../chain/deployments:/app/deployments
       - ../chain/config:/app/config:ro
