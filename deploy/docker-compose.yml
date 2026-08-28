@@ -27,20 +27,20 @@ services:
     networks:
       - trust-hpc-net
 
-  client-admin:
-    build:
-      context: ../chain
-      dockerfile: Dockerfile
-    command: ["npx", "hardhat", "run", "scripts/simulate-admin.ts", "--network", "docker"]
-    env_file:
-      - .env
-    volumes:
-      - ../chain/deployments:/app/deployments
-    depends_on:
-      contract-deployer:
-        condition: service_completed_successfully
-    networks:
-      - trust-hpc-net
+  # client-admin:
+  #   build:
+  #     context: ../chain
+  #     dockerfile: Dockerfile
+  #   command: ["npx", "hardhat", "run", "scripts/simulate-admin.ts", "--network", "docker"]
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ../chain/deployments:/app/deployments
+  #   depends_on:
+  #     contract-deployer:
+  #       condition: service_completed_successfully
+  #   networks:
+  #     - trust-hpc-net
 
   # client-owner:
   #   build:
