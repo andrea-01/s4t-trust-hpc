@@ -13,25 +13,24 @@ class EventPoller:
         self.running = True
         
         # Start from the block where the contract was deployed, or 0
-        try:
-            self.last_block_processed = chain_client.w3.eth.block_number
-        except:
-            self.last_block_processed = 0
+        self.last_block_processed = 0
             
-        asyncio.create_task(self._poll_loop())
+        self._task = asyncio.create_task(self._poll_loop())
         
     async def stop(self):
         self.running = False
 
     async def _poll_loop(self):
+        print("DEBUG: _poll_loop started!", flush=True)
         while self.running:
             try:
                 latest_block = chain_client.w3.eth.block_number
+                print(f"DEBUG: last_block={self.last_block_processed}, latest_block={latest_block}", flush=True)
                 if latest_block > self.last_block_processed:
                     self._fetch_events(self.last_block_processed + 1, latest_block)
                     self.last_block_processed = latest_block
             except Exception as e:
-                print(f"Error polling events: {e}")
+                print(f"Error polling events: {e}", flush=True)
                 
             await asyncio.sleep(settings.poll_interval)
             

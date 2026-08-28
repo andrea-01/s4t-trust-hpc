@@ -42,15 +42,33 @@ services:
     networks:
       - trust-hpc-net
 
-  client-owner:
+  # client-owner:
+  #   build:
+  #     context: ../chain
+  #     dockerfile: Dockerfile
+  #   command: ["npx", "hardhat", "run", "scripts/simulate-owner.ts", "--network", "docker"]
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ../chain/deployments:/app/deployments
+  #   depends_on:
+  #     contract-deployer:
+  #       condition: service_completed_successfully
+  #   networks:
+  #     - trust-hpc-net
+
+  owner-auto-approver:
     build:
       context: ../chain
       dockerfile: Dockerfile
-    command: ["npx", "hardhat", "run", "scripts/simulate-owner.ts", "--network", "docker"]
+    command: ["npx", "hardhat", "run", "scripts/auto-approve-trusted.ts", "--network", "docker"]
     env_file:
       - .env
+    environment:
+      - TRUSTED_DEVICES_CONFIG=/app/scripts/trusted-devices.json
     volumes:
       - ../chain/deployments:/app/deployments
+      - ../chain/config:/app/config:ro
     depends_on:
       contract-deployer:
         condition: service_completed_successfully

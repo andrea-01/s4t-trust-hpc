@@ -1,0 +1,11 @@
+{
+  "trustedStacks": [
+    {
+      "stackId": "iotronic-pipeline-workers",
+      "description": "Nodi worker dell'HPC engine, onboardati automaticamente dallo stack pipeline (deploy/docker-compose.pipeline.yml). Coprono sia l'onboarding statico via auto-onboard-workers.ts sia eventuali nuove board IoTronic registrate a runtime con lo stesso schema di naming.",
+      "deviceIdPrefixes": [
+        "worker-"
+      ]
+    }
+  ]
+}
