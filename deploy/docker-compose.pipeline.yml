@@ -38,14 +38,10 @@ services:
       dockerfile: satellite/Dockerfile
     ports:
       - "8001:8000"
+    env_file:
+      - .env
     environment:
       - GATEWAY_URL=http://gateway:8000
-      - OS_AUTH_URL=http://keystone:5000/v3
-      - OS_USERNAME=admin
-      - OS_PASSWORD=s4t
-      - OS_PROJECT_NAME=admin
-      - OS_USER_DOMAIN_NAME=Default
-      - OS_PROJECT_DOMAIN_NAME=Default
       - IOTRONIC_URL=http://iotronic-conductor:8812
       - PLUGIN_NAME=grpc_client
     networks:

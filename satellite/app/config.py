@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     os_user_domain_name: str = "Default"
     os_project_domain_name: str = "Default"
     os_username: str = "admin"
-    os_password: str = "s4t"
+    os_password: str
     
     # IoTronic Settings
     iotronic_url: str = "http://iotronic-conductor:8812"

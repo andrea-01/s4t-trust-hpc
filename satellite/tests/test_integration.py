@@ -4,27 +4,38 @@ import os
 import sys
 from httpx import AsyncClient, ASGITransport
 
+# Set dev defaults for environment before importing config if running locally
+if "GATEWAY_URL" not in os.environ:
+    os.environ["GATEWAY_URL"] = "http://localhost:8000"
+if "OS_AUTH_URL" not in os.environ:
+    os.environ["OS_AUTH_URL"] = "http://localhost:5000/v3"
+if "IOTRONIC_URL" not in os.environ:
+    os.environ["IOTRONIC_URL"] = "http://localhost:8812"
+if "OS_PASSWORD" not in os.environ:
+    os.environ["OS_PASSWORD"] = "s4t"
+
 # Add satellite/app to pythonpath for tests
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../app')))
 
 from config import settings
 
 # If running on host outside Docker network, override defaults to localhost
-if "GATEWAY_URL" not in os.environ:
-    settings.gateway_url = "http://localhost:8000"
-if "OS_AUTH_URL" not in os.environ:
-    settings.os_auth_url = "http://localhost:5000/v3"
-if "IOTRONIC_URL" not in os.environ:
-    settings.iotronic_url = "http://localhost:8812"
+if os.environ.get("GATEWAY_URL"):
+    settings.gateway_url = os.environ["GATEWAY_URL"]
+if os.environ.get("OS_AUTH_URL"):
+    settings.os_auth_url = os.environ["OS_AUTH_URL"]
+if os.environ.get("IOTRONIC_URL"):
+    settings.iotronic_url = os.environ["IOTRONIC_URL"]
 
 from main import app
 from node_registry import registry
-from pipeline_client import iotronic_client
+from pipeline_client import iotronic_client, run_pipeline_task
 
 # Re-point clients to updated settings
 registry.leasing_client.gateway_url = settings.gateway_url
 iotronic_client.auth_url = settings.os_auth_url.rstrip("/")
 iotronic_client.iotronic_url = settings.iotronic_url.rstrip("/")
+iotronic_client.password = settings.os_password
 
 import pytest_asyncio
 
@@ -132,3 +143,19 @@ async def test_error_handling_and_validation(async_client):
     # Non-existent pipeline release
     resp = await async_client.post("/pipeline/non-existent-id/release")
     assert resp.status_code == 404
+
+@pytest.mark.asyncio
+async def test_unexpected_plugin_response_format(monkeypatch):
+    """
+    Test 4: Verify that unrecognized plugin response format explicitly raises Exception.
+    """
+    async def mock_call_plugin(board_name, plugin_name, parameters):
+        return "UNKNOWN_RESPONSE_FORMAT_WITHOUT_REGEX_MATCH"
+
+    monkeypatch.setattr(iotronic_client, "call_plugin", mock_call_plugin)
+
+    with pytest.raises(Exception) as exc_info:
+        await run_pipeline_task("test-pipe", ["worker-1"], 10)
+
+    assert "Unexpected response format from plugin on node worker-1" in str(exc_info.value)
+    assert "UNKNOWN_RESPONSE_FORMAT_WITHOUT_REGEX_MATCH" in str(exc_info.value)

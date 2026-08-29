@@ -44,8 +44,7 @@ async def run_pipeline_task(pipeline_id: str, nodes: List[str], initial_value: i
             node_id = match.group(1)
             new_value = int(match.group(3))
         else:
-            node_id = device_id
-            new_value = current_value + 1
+            raise Exception(f"Unexpected response format from plugin on node {device_id}: '{result_text}'")
             
         current_value = new_value
         trace.append({
