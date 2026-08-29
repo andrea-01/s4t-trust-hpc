@@ -169,4 +169,27 @@ Tramite questa correzione, l'architettura attende intrinsecamente che la sincron
 - [x] 5. Configurazione cross-compatibilità: patch automatico del codice generato da `grpc_tools.protoc` per rimuovere i keyword args incompatibili con Python 3.7.
 - [x] 6. Esecuzione end-to-end con esito positivo: `PluginCall` inietta un task gRPC `INCREMENT_COUNTER(42)` all'`hpc-engine` worker C++ (`deploy-worker-1-1:50051`) e riceve `43` in risposta, confermando la connettività di rete bidirezionale!
 
-Lo Stadio 9.2 si conclude con successo; resta da pianificare ed eseguire lo Stadio 9.3.
+Lo Stadio 9.2 si conclude con successo.
+
+## Fase: M9 (Integrazione IoTronic - Stadio 9.3 — Completamento)
+
+### Task Completati
+- [x] 1. **Fase 9.3.a (Investigazione)**: Determinazione dell'endpoint REST sincrono `POST /v1/boards/{board_name}/plugins/{plugin_name}` con autenticazione token Keystone `X-Auth-Token` e header `X-OpenStack-Iotronic-API-Version`. Validata coincidenza tra `device_id` blockchain e nome board IoTronic (`worker-1`, `worker-2`, `worker-3`).
+- [x] 2. **Fase 9.3.b (Scaling Ambiente)**: Registrate 3 board Lightning-Rod connesse sia alla rete IoTronic WAMP (`s4t`) sia alla rete bridge (`s4t-bridge`). Plugin gRPC `grpc_client` iniettato su tutte le 3 board.
+- [x] 3. **Fase 9.3.c (Refactor Satellite)**:
+  - Aggiornato `satellite/app/config.py` con parametri Keystone (`os_auth_url`, `os_username`, `os_password`, `os_project_name`, ecc.) e IoTronic (`iotronic_url`, `plugin_name`).
+  - Connesso il container `satellite` alla rete esterna `stack4things_dockercompose_deployment_s4t` in `deploy/docker-compose.pipeline.yml`.
+  - Creato nuovo client REST stateless `satellite/app/iotronic_client.py` con gestione token scoped Keystone e retry automatico in caso di scadenza.
+  - Rifattorizzato `satellite/app/pipeline_client.py` per invocare i task sui worker tramite chiamata REST IoTronic (`PluginCall`), rimuovendo qualsiasi chiamata gRPC diretta residua dal satellite.
+  - Semplificato `node_registry.py` e `node_directory.json` eliminando il campo `grpc_url` non più necessario.
+- [x] 4. **Fase 9.3.d (Testing Automatico E2E)**:
+  - Scritta suite completa di test di integrazione in `satellite/tests/test_integration.py` validata sia in locale sia dentro il container `satellite` contro l'infrastruttura reale (Hardhat + Gateway + IoTronic + Lightning-Rod + Worker C++).
+  - Testato con successo flusso sequenziale 3 nodi (valore iniziale 42 incrementato a 45 lungo la catena).
+  - Testato con successo scenario concorrente con 2 pipeline attive in parallelo (Pipeline A con 2 nodi, Pipeline B con 1 nodo) e verifica del limite di capacità.
+- [x] 5. **Chiarimenti e Cleanup**:
+  - **Commit `425d148` (disattivazione `client-admin` / `dev-sim-01` da `docker-compose.yml`)**: `client-admin` era uno script di simulazione M1 che inoltrava automaticamente una richiesta di onboarding per il dispositivo statico `dev-sim-01`. Con l'adozione dell'onboarding automatico dei worker (`auto-onboard-workers.ts` in M8) e del modello di trust default-deny (`owner-auto-approver` in M9, ristretto al prefisso `worker-`), la richiesta di `dev-sim-01` rimaneva permanentemente `Pending` ed era superflua per i workflow a regime. La disattivazione evita rumore on-chain.
+  - **Verifica configurazione `trusted-devices.json`**: Confermato che il file canonico di configurazione risiede in `chain/config/trusted-devices.json` (montato read-only nel container approver) e il vecchio duplicato in `chain/scripts/` è stato rimosso.
+
+### Definition of Done — M9 ✅
+Tutti gli stadi M9.1, M9.2 e M9.3 sono completati, testati e verificati contro l'infrastruttura reale senza mock.
+

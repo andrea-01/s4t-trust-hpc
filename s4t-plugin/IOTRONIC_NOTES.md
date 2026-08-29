@@ -72,3 +72,26 @@ Il test si è concluso con successo. Utilizzando l'azione `PluginCall`, il coman
   1. Rimuovere il record obsoleto: `DELETE FROM wampagents WHERE hostname='<vecchio_hostname>';` e riavviare il container `iotronic-wagent`.
   2. Forzare la rigenerazione della configurazione per le board: `UPDATE boards SET status='registered', agent=NULL, config=NULL WHERE name LIKE 'worker-%';`.
   3. Pulire il file `/etc/iotronic/settings.json` sui `lightning-rod` container inietando una configurazione pulita per forzare il first-boot.
+
+## Completamento Fase M9.3 (Refactor Satellite & E2E Testing)
+
+Nella fase finale di M9.3 (sotto-fasi 9.3.c e 9.3.d), il modulo `satellite/` è stato completamente rifattorizzato per eliminare qualsiasi chiamata gRPC diretta ai worker C++, sostituendola interamente con l'orchestrazione remota delegata a Stack4Things / IoTronic via REST HTTP.
+
+### 1. Architettura di Invocazione e Autenticazione
+- **Client IoTronic Stateless (`satellite/app/iotronic_client.py`)**:
+  - Autenticazione con Keystone via `POST {os_auth_url}/auth/tokens` ottenendo un token scoped (`X-Subject-Token`).
+  - Chiamata sincrona a IoTronic Conductor via `POST {iotronic_url}/v1/boards/{board_name}/plugins/{plugin_name}` con payload `{"action": "PluginCall", "parameters": {"worker_addr": ..., "input_value": ...}}`.
+  - Gestione automatica di token expiration (401 -> refresh token e retry una volta), errori HTTP e timeout.
+- **Flusso Sequenziale Multi-Nodo (`satellite/app/pipeline_client.py`)**:
+  - Riceve la lista di nodi allocati via lease blockchain (`worker-1`, `worker-2`, `worker-3`).
+  - Per ciascun nodo, effettua la chiamata REST a IoTronic indirizzandola alla corrispondente board; la board Lightning-Rod esegue il plugin gRPC locale comunicando con il proprio worker C++ su `s4t-bridge`.
+  - L'output di ciascun nodo viene estratto e iniettato come input per il nodo successivo della catena.
+- **Semplificazione Node Registry**:
+  - `node_directory.json` e `node_registry.py` non contengono più indirizzi gRPC hardcoded (`grpc_url`), poiché il routing è gestito nativamente dal Conductor IoTronic tramite il nome della board (coincidente con il `device_id`).
+
+### 2. Risultati del Testing Automatico E2E (Nessun Mock)
+I test automatici implementati in `satellite/tests/test_integration.py` sono stati eseguiti con successo sia dall'ambiente locale sia all'interno del container `deploy-satellite-1`:
+- `test_full_pipeline_e2e_sequential`: Esegue il ciclo completo lease (3 nodi on-chain via Gateway) -> run (valore iniziale 42 -> 43 -> 44 -> 45 con trace di 3 worker) -> release (on-chain).
+- `test_concurrent_leasing_two_pipelines`: Verifica la tenuta del modello di concorrenza con 2 pipeline attive contemporaneamente (Pipeline A con 2 nodi, Pipeline B con 1 nodo), fallimento atteso su richieste eccedenti la capacità, esecuzione concorrente e rilascio corretto di tutte le risorse.
+- `test_error_handling_and_validation`: Verifica la gestione degli errori per parametri non validi e pipeline inesistenti.
+
