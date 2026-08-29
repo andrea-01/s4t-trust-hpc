@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy proto directory and satellite app
 COPY proto/ /app/proto/
 COPY satellite/app/ /app/app/
+COPY satellite/tests/ /app/tests/
 
 # Generate Python stubs
 RUN python -m grpc_tools.protoc -I/app/proto --python_out=/app/app --grpc_python_out=/app/app /app/proto/pipeline.proto

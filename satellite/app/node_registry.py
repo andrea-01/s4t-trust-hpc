@@ -13,8 +13,8 @@ class NodeRegistry:
         directory_path = os.path.join(os.path.dirname(__file__), "node_directory.json")
         try:
             with open(directory_path, "r") as f:
-                self.directory: Dict[str, str] = json.load(f)
-        except Exception as e:
+                self.directory: Dict[str, dict] = json.load(f)
+        except Exception:
             self.directory = {}
             
         self.leasing_client = GatewayLeasingClient(settings.gateway_url)
@@ -61,6 +61,6 @@ class NodeRegistry:
             if pipeline_id not in self.pipelines:
                 raise HTTPException(status_code=404, detail="Pipeline not found")
             
-            return [self.directory[device_id] for device_id in self.pipelines[pipeline_id]]
+            return list(self.pipelines[pipeline_id])
 
 registry = NodeRegistry()
