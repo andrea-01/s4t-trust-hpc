@@ -84,6 +84,7 @@ services:
     volumes:
       - ../chain/deployments:/app/deployments
       - ../chain/artifacts:/app/artifacts
+      - ../chain/config:/app/config
     env_file:
       - .env
     environment:
@@ -91,6 +92,7 @@ services:
       - DEPLOYMENTS_PATH=/app/deployments/localhost.json
       - ABI_PATH=/app/artifacts/contracts/OnboardingTrust.sol/OnboardingTrust.json
       - LEASING_ABI_PATH=/app/artifacts/contracts/LeasingRegistry.sol/LeasingRegistry.json
+      - TRUSTED_DEVICES_CONFIG=/app/config/trusted-devices.json
     depends_on:
       auto-onboard:
         condition: service_completed_successfully
@@ -141,6 +143,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
+    env_file:
+      - .env
     environment:
       - GATEWAY_URL=http://gateway:8000
     depends_on:
