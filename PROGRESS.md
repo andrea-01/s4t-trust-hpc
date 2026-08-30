@@ -193,3 +193,43 @@ Lo Stadio 9.2 si conclude con successo.
 ### Definition of Done — M9 ✅
 Tutti gli stadi M9.1, M9.2 e M9.3 sono completati, testati e verificati contro l'infrastruttura reale senza mock.
 
+## Fase: M10 (Stadio 1 — Autenticazione Dashboard + Gestione Allowlist Trust)
+
+### Investigazione (Fase 1) — `chain/scripts/auto-approve-trusted.ts`
+- **Evidenza rilevata**: L'ispezione di `chain/scripts/auto-approve-trusted.ts` (righe 66-78) ha evidenziato che `loadConfig()` veniva invocata una sola volta all'avvio in `main()`, catturando `config` nella closure del listener eventi `OnboardingRequested`.
+- **Modifica applicata con conferma**: Spostata l'invocazione di `loadConfig()` direttamente all'interno del callback di `OnboardingRequested` per ogni evento ricevuto. Aggiunta gestione degli errori in `loadConfig()` con `try...catch`: in caso di file temporaneamente illeggibile o parsing JSON fallito, viene emesso un warning e restituito `{ trustedStacks: [] }` (trattato in default-deny), impedendo il crash del listener.
+
+### Task Completati (Fase 2, 3, 4)
+- [x] 1. **Reload dinamico e resilienza in `auto-approve-trusted.ts`**: Ricarica automatica del file di configurazione ad ogni evento `OnboardingRequested` con fallback sicuro (default-deny) in caso di errore di parsing/I/O.
+- [x] 2. **Configurazione credenziali senza default**:
+  - Aggiunte `ui_admin_username: str` e `ui_admin_password: str` in `ui/app/config.py` e `gateway/app/config.py` senza alcun default hardcoded.
+  - Aggiornati `deploy/.env.example`, `deploy/.env` e `deploy/docker-compose.yml` (`env_file: .env` per UI, volume mount `../chain/config:/app/config` e `TRUSTED_DEVICES_CONFIG` per Gateway).
+- [x] 3. **Protezione HTTP Basic Auth**:
+  - Middleware/dependency su `ui/app/main.py` che protegge globalmente tutte le route esistenti e nuove (`/`, `/api/requests`, `/request`, `/trust`, `/trust/delete/*`) con confronto delle credenziali a tempo costante (`secrets.compare_digest`). Ritorna `401 Unauthorized` con header `WWW-Authenticate: Basic` in assenza di credenziali valide.
+  - Basic Auth sui nuovi endpoint `/trust/stacks` in `gateway/app/main.py` (lasciando inalterate le route preesistenti on-chain e leasing).
+- [x] 4. **Client e Modelli Allowlist nel Gateway (`trust_config_client.py`)**:
+  - Modelli Pydantic `TrustedStack` e `TrustedDevicesConfig` con validazione esplicita (rifiuto di `stackId` o prefissi vuoti o duplicati).
+  - Implementazione di `TrustConfigClient` con scrittura atomica del file `trusted-devices.json` via file temporaneo nella stessa directory e `os.replace` (atomic rename POSIX).
+  - Nuovi endpoint REST: `GET /trust/stacks`, `POST /trust/stacks`, `DELETE /trust/stacks/{stack_id}`.
+- [x] 5. **Client Gateway e Nuova Vista UI**:
+  - Aggiunti metodi `get_trusted_stacks()`, `add_trusted_stack()`, `delete_trusted_stack()` a `ui/app/gateway_client.py` con credenziali Basic Auth automatiche.
+  - Template `ui/templates/trust.html` e route `GET /trust`, `POST /trust`, `POST /trust/delete/{stack_id}` per visualizzare, inserire e rimuovere stack fidati in stile server-rendered Jinja2.
+  - Aggiornato `base.html` con barra di navigazione coerente verso Dashboard, Gestione Stack Fidati e Mailpit.
+- [x] 6. **Testing Completo (Unitario, Integrazione ed E2E su stack reale)**:
+  - `gateway/tests/test_trust_config.py`: verifica rigetto `401`, validazione Pydantic (`422`), gestione duplicati (`400`), CRUD su file reale e rimozione (`404` se inesistente).
+  - `ui/tests/test_auth_and_trust.py` e `ui/tests/test_integration.py`: verifica protezione globale Basic Auth, rendering viste Jinja2, redirect form `303` e chiamate a gateway client.
+  - **Verifica End-to-End su Docker Compose reale**:
+    - `POST /onboarding-request` per `edge-device-01` (prefisso non presente) → `Pending` (default-deny confermato dai log di `owner-auto-approver`).
+    - `POST /trust/stacks` via API/UI per aggiungere stack `edge-cluster` con prefisso `edge-` → salvataggio atomico su disco.
+    - `POST /onboarding-request` per `edge-device-02` → `owner-auto-approver` ricarica a runtime `trusted-devices.json`, matcha lo stack e auto-approva la richiesta on-chain (stato `Approved`) **senza necessità di riavviare il servizio**.
+    - `DELETE /trust/stacks/edge-cluster` via API/UI → rimozione dello stack.
+    - `POST /onboarding-request` per `edge-device-03` → torna in default-deny (`Pending`).
+
+### Definition of Done — M10 Stadio 1 ✅
+- Tutte le viste della dashboard e gli endpoint trust del gateway sono protetti da Basic Auth.
+- Gestione CRUD dell'allowlist funzionante tramite API Gateway e interfaccia UI.
+- Reload dinamico verificato end-to-end con auto-approvazione reattiva on-chain.
+- Nessun valore di default hardcoded per le credenziali.
+- Moduli isolati e contratti invariati.
+
+
