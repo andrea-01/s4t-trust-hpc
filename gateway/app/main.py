@@ -1,10 +1,32 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from contextlib import asynccontextmanager
+import secrets
+from typing import List
+
 from app.chain_client import chain_client
 from app.event_poller import event_poller
-from app.models import OnboardingRequest, LeasingRequest
+from app.models import OnboardingRequest, LeasingRequest, TrustedStack
 from app.leasing_client import LeasingClient
+from app.trust_config_client import trust_config_client
 from app.config import settings
+
+security = HTTPBasic()
+
+def authenticate_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    is_user_ok = secrets.compare_digest(
+        credentials.username.encode("utf8"), settings.ui_admin_username.encode("utf8")
+    )
+    is_pass_ok = secrets.compare_digest(
+        credentials.password.encode("utf8"), settings.ui_admin_password.encode("utf8")
+    )
+    if not (is_user_ok and is_pass_ok):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenziali non valide",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 
 leasing_client = LeasingClient(
     rpc_url=settings.rpc_url,
@@ -88,3 +110,32 @@ async def get_leasing_status(device_id: str):
         return {"status": "success", "data": status}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving status: {str(e)}")
+
+@app.get("/trust/stacks", dependencies=[Depends(authenticate_admin)])
+async def list_trusted_stacks():
+    try:
+        stacks = trust_config_client.list_stacks()
+        return [s.model_dump(by_alias=True) for s in stacks]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading trust config: {str(e)}")
+
+@app.post("/trust/stacks", dependencies=[Depends(authenticate_admin)])
+async def add_trusted_stack(stack: TrustedStack):
+    try:
+        created = trust_config_client.add_stack(stack)
+        return {"status": "success", "stack": created.model_dump(by_alias=True)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error saving trusted stack: {str(e)}")
+
+@app.delete("/trust/stacks/{stack_id}", dependencies=[Depends(authenticate_admin)])
+async def delete_trusted_stack(stack_id: str):
+    try:
+        trust_config_client.delete_stack(stack_id)
+        return {"status": "success", "message": f"Stack '{stack_id}' removed"}
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e).strip("'"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting trusted stack: {str(e)}")
+
