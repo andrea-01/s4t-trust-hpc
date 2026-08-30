@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
+client.auth = ("admin", "adminpassword")
+
 
 @pytest.mark.asyncio
 async def test_dashboard_integration():

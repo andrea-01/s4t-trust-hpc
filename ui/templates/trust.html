@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Gestione Stack Fidati (Allowlist)</h1>
+
+<p style="color: #666; font-size: 0.95rem;">
+    Configurazione degli stack autorizzati all'auto-approvazione on-chain (default-deny).
+    Le richieste di onboarding per device che matchano i prefissi configurati vengono approvate automaticamente.
+</p>
+
+{% if error_message %}
+<div class="error">{{ error_message }}</div>
+{% endif %}
+
+<h2>Stack Autorizzati Attivi</h2>
+<table>
+    <thead>
+        <tr>
+            <th style="width: 25%;">Stack ID</th>
+            <th style="width: 35%;">Descrizione</th>
+            <th style="width: 25%;">Prefissi Device ID</th>
+            <th style="width: 15%; text-align: center;">Azioni</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for stack in stacks %}
+        <tr>
+            <td><strong>{{ stack.stackId }}</strong></td>
+            <td>{{ stack.description | default('-', true) }}</td>
+            <td>
+                {% for prefix in stack.deviceIdPrefixes %}
+                <span class="badge">{{ prefix }}</span>
+                {% endfor %}
+            </td>
+            <td style="text-align: center;">
+                <form action="/trust/delete/{{ stack.stackId }}" method="POST" style="margin: 0;" onsubmit="return confirm('Rimuovere lo stack \'{{ stack.stackId }}\'?');">
+                    <button type="submit" class="btn-danger">Rimuovi</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="4" style="text-align: center; color: #888;">Nessuno stack fidato configurato.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2 style="margin-top: 2rem;">Aggiungi Nuovo Stack Fidato</h2>
+<form action="/trust" method="POST" style="background: #fafafa; padding: 1.25rem; border: 1px solid #e5e5e5; border-radius: 6px;">
+    <div class="form-group">
+        <label for="stack_id">Stack ID *</label>
+        <input type="text" id="stack_id" name="stack_id" value="{{ form_stack_id | default('') }}" placeholder="es. edge-cluster-01" required>
+    </div>
+    
+    <div class="form-group">
+        <label for="description">Descrizione</label>
+        <input type="text" id="description" name="description" value="{{ form_description | default('') }}" placeholder="es. Nodi worker cluster edge secondario">
+    </div>
+
+    <div class="form-group">
+        <label for="prefixes">Prefissi Device ID (separati da virgola o a capo) *</label>
+        <input type="text" id="prefixes" name="prefixes" value="{{ form_prefixes | default('') }}" placeholder="es. edge-, rpi-" required>
+    </div>
+
+    <button type="submit">Aggiungi Stack</button>
+</form>
+{% endblock %}
