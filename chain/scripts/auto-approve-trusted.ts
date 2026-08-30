@@ -24,7 +24,16 @@ function loadConfig(): TrustedDevicesConfig {
         return { trustedStacks: [] };
     }
 
-    return JSON.parse(fs.readFileSync(configPath, "utf8"));
+    try {
+        const raw = fs.readFileSync(configPath, "utf8");
+        return JSON.parse(raw);
+    } catch (err) {
+        console.warn(
+            `[auto-approve] Errore durante la lettura/parsing del config in ${configPath}: ${err}. ` +
+            `Trattato come default-deny per questo ciclo.`
+        );
+        return { trustedStacks: [] };
+    }
 }
 
 function matchTrustedStack(deviceId: string, config: TrustedDevicesConfig): string | null {
@@ -63,9 +72,9 @@ async function main() {
     }
 
     console.log(`Contract found at ${contractAddress}. Loading trusted devices config...`);
-    const config = loadConfig();
-    console.log(`Loaded ${config.trustedStacks.length} trusted stack(s): ` +
-        config.trustedStacks.map(s => s.stackId).join(", ") || "(none)");
+    const initialConfig = loadConfig();
+    console.log(`Initial trusted stacks (${initialConfig.trustedStacks.length}): ` +
+        (initialConfig.trustedStacks.map(s => s.stackId).join(", ") || "(none)"));
 
     contract.on("OnboardingRequested", async (requestId, deviceId, requester, ownerAddress) => {
         // Reagisce solo alle richieste indirizzate all'owner simulato di questo servizio,
@@ -75,7 +84,8 @@ async function main() {
             return;
         }
 
-        const stackId = matchTrustedStack(deviceId, config);
+        const currentConfig = loadConfig();
+        const stackId = matchTrustedStack(deviceId, currentConfig);
 
         if (!stackId) {
             console.log(
