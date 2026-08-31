@@ -232,4 +232,37 @@ Tutti gli stadi M9.1, M9.2 e M9.3 sono completati, testati e verificati contro l
 - Nessun valore di default hardcoded per le credenziali.
 - Moduli isolati e contratti invariati.
 
+### Sessione di Verifica End-to-End & Integrazione Completa (Post-M10.1)
+
+In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal vivo su tutti e tre gli stack avviati a freddo contemporaneamente, senza mock e con comandi manuali reali:
+
+1. **Avvio a Freddo dei Tre Stack**:
+   - Stack Base (`deploy/docker-compose.yml`): `hardhat-node`, `contract-deployer`, `auto-onboard`, `owner-auto-approver`, `gateway`, `notification`, `mailpit`, `ui` avviati e healthy/operativi.
+   - Stack IoTronic (`../Stack4Things_DockerCompose_deployment`): `iotronic-conductor`, `keystone`, `crossbar`, `rabbitmq`, `mariadb`, `iotronic-ui`, `iotronic-wagent`, `iotronic-wstun` avviati e raggiungibili.
+   - Stack Pipeline (`deploy/docker-compose.pipeline.yml`): `satellite` e i tre worker C++ (`worker-1`, `worker-2`, `worker-3`) operativi e connessi alle reti `pipeline-net`, `s4t-bridge` e `stack4things_dockercompose_deployment_s4t`.
+   - **Esito avvio board**: Tutte e 3 le board Lightning-Rod (`worker-1`, `worker-2`, `worker-3`) e la board `test_board` sono risultate immediatamente `online` e in ascolto WAMP, senza che si sia ripresentato il problema dei *wampagent stale* riscontrato in M9.
+
+2. **Pipeline Sequenziale Reale Satellite ↔ IoTronic ↔ Worker C++**:
+   - Eseguita allocazione di 2 nodi via `POST /pipeline/lease` (`pipeline_id: a4dddabc-0540-4607-b9c2-f8ed8c4d6bb3`).
+   - Invocata esecuzione con valore iniziale non banale `initial_value: 100` via `POST /pipeline/{id}/run`.
+   - Risultato numerico esatto validato dal vivo lungo la sequenza di nodi: `worker-1` incrementa `100 -> 101`, `worker-2` incrementa `101 -> 102`, con `final_value: 102`.
+   - Ispezione log verificata a ogni livello: chiamata REST `POST /v1/boards/{board}/plugins/grpc_client` su Conductor API (`iotronic-api_access.log`), ricezione ed esecuzione plugin gRPC su Lightning-Rod container (`Worker worker-2 returned: 102`), ed esecuzione nel processo C++ (`pipeline_worker`).
+   - Rilascio risorse via `POST /pipeline/{id}/release` verificato con successo sullo smart contract `LeasingRegistry.sol` tramite `GET /leasing/status/{device_id}` sul Gateway.
+
+3. **Collegamento End-to-End Trust ↔ Leasing ↔ Esecuzione (Device `test_board`)**:
+   - **Default-Deny iniziale**: Inoltrata richiesta `POST /onboarding-request` per `test_board` (prefisso `test_` non presente in allowlist). `owner-auto-approver` rileva la mancata corrispondenza e lascia la richiesta nello stato `Pending` (request #3).
+   - **Blocco Leasing On-Chain**: Il tentativo di lease via `POST /leasing/lease` per `test_board` viene rifiutato con `403 Forbidden` (`"Node is not approved for leasing"`), generato direttamente dal controllo on-chain dello smart contract `LeasingRegistry.sol` che interroga `OnboardingTrust.sol`.
+   - **Gestione Dinamica Allowlist**: Aggiunto lo stack fidato `test-cluster` con prefisso `test_` tramite chiamata autenticata `POST /trust/stacks` (Basic Auth).
+   - **Auto-Approvazione a Caldo**: Inoltrata nuova richiesta di onboarding per `test_board` (request #4); `owner-auto-approver` ricarica la configurazione aggiornata al volo, matcha il prefisso `test_` e approva la transazione on-chain (`Approved`).
+   - **Lease ed Esecuzione Reale**: Con lo stato `Approved`, la chiamata `POST /leasing/lease` per `test_board` ha successo (`is_leased: true`). Invocato il task con `input_value: 200` tramite comando IoTronic (`PluginCall`), ottenendo il risultato verificato `SUCCESS: Worker worker-1 incremented 200 -> 201`.
+   - **Release**: Rilascio on-chain completato con successo (`is_leased: false`).
+
+4. **Limite Noto Documentato**:
+   - L'esecuzione sul device dinamico `test_board` è stata effettuata invocando direttamente il plugin tramite comando IoTronic e non tramite l'endpoint `/pipeline/run` del satellite. Questo perché `satellite/app/node_directory.json` è attualmente un pool statico limitato a `worker-1`, `worker-2` e `worker-3`, e non include i dispositivi aggiunti dinamicamente all'allowlist dei trust stack.
+
+5. **Cleanup Post-Verifica**:
+   - Lo stack dimostrativo `test-cluster` è stato rimosso dall'allowlist tramite richiesta autenticata `DELETE /trust/stacks/test-cluster` verso il Gateway.
+   - Verificato tramite `GET /trust/stacks` e ispezione di `chain/config/trusted-devices.json` che la configurazione è tornata a contenere unicamente lo stack canonico `iotronic-pipeline-workers`.
+
+
 
