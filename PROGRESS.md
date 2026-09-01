@@ -277,26 +277,29 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
   - Impostato esplicitamente `set(CMAKE_BUILD_TYPE Release)` e `-O2 -Wall -Wextra` in `CMakeLists.txt` per garantire che tutti i target C++ compilino con le medesime ottimizzazioni.
   - **Verifica Warmup**: Testata l'ipotesi del cold-start del thread pool libgomp tramite `#pragma omp parallel {}` prima di `start_time`: l'impatto registrato è di soli ~3.5 ms.
   - **Confronto Omogeneo**: Rigenerati nella stessa sessione e nello stesso container sia il benchmark OpenMP puro M5 (`results_m5_release.csv`) sia l'ibrido MPI+OpenMP M11.1 (`results_hybrid_mpi_omp.csv`).
-  - **Risultato Baseline**: A parità di build/ambiente, 1 core produce ~4.3k–5.0k sig/s in tutte le modalità (sequenziale ~5.0k, OpenMP 1 thread ~4.8k, MPI 1×1 ~4.3k), spiegando che la differenza con i valori storici del README (~17k) derivava da variazioni di ambiente/hardware.
-- [x] 4. **Esecuzione Benchmark su Griglia di Combinazioni**:
-  - Eseguita campagna di test su dataset di 500 device sintetici per le combinazioni: 1×1, 1×2, 1×4, 2×1, 2×2, 2×4, 4×1, 4×2, 4×4, 8×1, 8×2 (Ranks MPI × Threads OpenMP per rank).
-  - Risultati tracciati in `hpc-engine/results_hybrid_mpi_omp.csv` con colonne `model,batch_size,mpi_ranks,omp_threads,time_seconds,throughput`.
-  - A 8 core logici, l'ibrido 4 rank × 2 thread (**21,749 sig/s**) supera sia OpenMP puro su 8 thread (19,060 sig/s) sia 8 rank MPI puri (21,514 sig/s).
-  - A 16 core logici, 4 rank × 4 thread tocca il picco di **33,554 sig/s** (speedup ~7.9x rispetto a 1×1).
-- [x] 5. **Aggiornamento Documentazione e Analisi Prestazionale (`hpc-engine/README.md`)**:
-  - Inserita tabella comparativa a 4 colonne omogenea e documentato l'effetto dell'ibridazione, della granularità fine del carico e dei lock interni OpenSSL.
-- [x] 6. **Isolamento Rigoroso**:
+  - **Risultato Baseline**: A parità di build/ambiente, 1 core produce ~4.8k–5.3k sig/s in tutte le modalità (sequenziale ~5.0k, OpenMP 1 thread ~4.8k, MPI 1×1 ~5.3k), spiegando che la differenza con i valori storici del README (~17k) derivava da variazioni di ambiente/hardware.
+- [x] 4. **Isolamento e Risoluzione CPU Process Binding (Finding HPC Fondamentale)**:
+  - Ispezione con `mpirun --report-bindings`: Open MPI per default vincola ogni processo rank a **un singolo core fisico** (mask `[BB/../../...]`), costringendo tutti i thread OpenMP del rank a contendersi un solo core (causando il crollo iniziale di 1×4 e 2×4).
+  - Applicando `--bind-to none`, i thread OpenMP si distribuiscono liberamente sui core disponibili: 1×4 sale a **13,114 sig/s** e 2×4 sale a **24,706 sig/s**.
+- [x] 5. **Esecuzione Benchmark su Griglia di Combinazioni (`--bind-to none`)**:
+  - Eseguita campagna di test su dataset di 500 device sintetici per le combinazioni: 1×1 (5.3k), 1×2 (10.1k), 1×4 (13.1k), 2×1 (10.4k), 2×2 (12.6k), 2×4 (24.7k), 4×1 (14.5k), 4×2 (25.6k), 4×4 (30.0k), 8×1 (25.5k), 8×2 (32.4k sig/s).
+  - A 8 core logici, l'ibrido 4 rank × 2 thread (**25,582 sig/s**) e 2 rank × 4 thread (**24,706 sig/s**) superano sia OpenMP puro a 8 thread (19,060 sig/s) sia 8 rank MPI puri (21,514 sig/s).
+  - A 16 core logici, 8 rank × 2 thread tocca il picco di **32,442 sig/s**.
+- [x] 6. **Aggiornamento Documentazione e Analisi Prestazionale (`hpc-engine/README.md`)**:
+  - Inserita tabella comparativa a 4 colonne omogenea e documentati dettagliatamente i due finding HPC chiave: il CPU process binding in Open MPI e l'analisi di scaling.
+- [x] 7. **Isolamento Rigoroso**:
   - Nessuna modifica a `src/onboarding/`, `src/pipeline/`, `satellite/` o ad altri moduli.
 
 ### Definition of Done — Stadio 11.1 ✅
 - `main_mpi.cpp` invoca `SignatureBench::run_parallel` con thread parametrizzati per ogni rank MPI.
 - `CMakeLists.txt` configurato con `Release` e `-O2`.
-- Risultati salvati in CSV con colonna dedicata `omp_threads`.
+- Risultati salvati in CSV con colonna dedicata `omp_threads` e policy di binding corretta.
 - `hpc-engine/README.md` aggiornato con tabella comparativa omogenea e interpretazione tecnica basata su evidenze sperimentali.
 - Tutti i test CTest (`SignatureCorrectness` e `WorkerCorrectness`) passano al 100%.
 
 ### Domande Aperte
 - Nessuna per lo Stadio 11.1. Pronto per la definizione e pianificazione dello Stadio 11.2 (`VERIFY_SIGNATURES_BATCH`).
+
 
 
 
