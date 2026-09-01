@@ -1,0 +1,12 @@
+model,batch_size,mpi_ranks,omp_threads,time_seconds,throughput
+mpi+openmp,5000,1,1,0.274951,18185.1
+mpi+openmp,5000,1,2,0.143271,34898.8
+mpi+openmp,5000,1,4,0.0910279,54928.2
+mpi+openmp,5000,2,1,0.145652,34328.3
+mpi+openmp,5000,2,2,0.0830427,60210
+mpi+openmp,5000,2,4,0.0547948,91249.5
+mpi+openmp,5000,4,1,0.075518,66209.4
+mpi+openmp,5000,4,2,0.0622239,80354.9
+mpi+openmp,5000,4,4,0.0360063,138865
+mpi+openmp,5000,8,1,0.0667384,74919.4
+mpi+openmp,5000,8,2,0.0458446,109064

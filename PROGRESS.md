@@ -364,8 +364,9 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
   - Salva i dati grezzi in `hpc-engine/results_grpc_task_parallel.csv`.
   - Picco di throughput in regime clean ($\le 20$ core): **60,220.7 sig/s** (8 nodi × 2 thread, speedup **5.92x** rispetto a 1 nodo 1 thread).
   - Picco assoluto con sonda oversubscribed (8 nodi × 4 thread = 32 thread): **66,433.5 sig/s** (speedup **6.53x**).
-- [x] 6. **Confronto con MPI+OpenMP (Stadio 11.1) e Aggiornamento Documentazione**:
-  - `hpc-engine/README.md` aggiornato con la sezione 11.3 completa, tabelle comparative, analisi teorica e motivazione tecnica del vantaggio prestazionale di gRPC (+85% rispetto a MPI 8×2 grazie a demoni a caldo e asincronismo I/O).
+- [x] 6. **Confronto Omogeneo con MPI+OpenMP (Stadio 11.1) su Batch da 5.000 firme**:
+  - Rieseguito l'esperimento MPI+OpenMP sulla medesima taglia di 5.000 firme (`hpc-engine/results_hybrid_mpi_omp_5000.csv`) nelle stesse condizioni omogenee (`Release`, `-O2`, `--bind-to none`).
+  - **Evidenza rilevata**: A parità di carico (5k firme), le curve di speedup e di efficienza sono virtualmente identiche (**6.00x** per MPI vs **5.92x** per gRPC su 16 core effettivi, con efficienza di scala $E = 0.37$). MPI ottiene throughput assoluto maggiore (~109k vs ~60k sig/s) grazie alla memoria condivisa in-process POSIX, mentre gRPC incorpora il round-trip TCP client-side e la serializzazione HTTP/2 per supportare l'architettura a microservizi asincrona e il leasing dinamico su blockchain.
 - [x] 7. **Isolamento Rigoroso**:
   - Nessuna modifica a `satellite/`, `chain/`, `gateway/`, `notification/`, `ui/`, `docker-compose.pipeline.yml` o ai worker registrati `worker-1/2/3`.
 
@@ -373,8 +374,9 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
 - Driver di benchmark isolato funzionante su 8 nodi container gRPC.
 - Griglia completa eseguita su due dimensioni (1k e 5k firme) con gestione del resto e validazione 100% su `valid_count`.
 - Metriche formali calcolate: Speedup, Efficiency, Legge di Amdahl (predetto vs misurato), Scalabilità $L$.
-- Nessun oversubscription nascosto: soglia a 20 core logici rigorosamente rispettata ed etichettata.
-- `hpc-engine/README.md` e `PROGRESS.md` aggiornati.
+- Confronto omogeneo tra MPI+OpenMP e gRPC+OpenMP su batch identico di 5.000 firme.
+- Soglia dei 20 core logici reali rispettata con sonda oversubscribed esplicitamente etichettata.
+- `hpc-engine/README.md`, `PROGRESS.md` e `AGENTS.md` aggiornati.
 
 ### Domande Aperte
 - Nessuna per lo Stadio 11.3. Pronto per la pianificazione dello Stadio 11.4 (Integrazione del dispatch parallelo nella catena reale satellite + confronto overhead).

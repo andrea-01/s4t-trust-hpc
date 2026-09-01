@@ -239,9 +239,20 @@ La metrica di scalabilità $L(P) = \frac{E(P, N_{large}=5000)}{E(P, N_{small}=10
      $$S_{pred}(4) = \frac{1}{0.0251 + \frac{1 - 0.0251}{4}} = \mathbf{3.72\times}$$
    - Lo speedup **effettivamente misurato** a 4 nodi è **3.73x**, confermando con straordinaria precisione sperimentale la validità predittiva del modello teorico di Amdahl quando l'overhead è dominato dalla ripartizione del carico e non da memory contention.
 
-3. **Confronto dei Due Modelli Ibridi: gRPC Dispatch + OpenMP vs MPI + OpenMP**:
-   - Entrambi i modelli realizzano l'ibrido task parallelism + data parallelism. Tuttavia:
-     - **MPI + OpenMP (M11.1)** raggiunge a 8 rank × 2 thread **~32,442 sig/s** a causa del modello sincrono SPMD e delle barriere di sincronizzazione di `MPI_Reduce`.
-     - **gRPC Dispatch + OpenMP (M11.3)** raggiunge a 8 container × 2 thread **60,220.7 sig/s** (e **66,433.5 sig/s** a 8×4), con un incremento prestazionale di **+85%** rispetto all'equivalente configurazione MPI.
-     - **Motivazione tecnica**: L'architettura a microservizi worker gRPC mantiene demoni C++ a caldo con canali TCP asincroni pre-allocati. Il dispatch asincrono con `asyncio.gather` sovrappone la latenza di rete del client con il calcolo dei worker, senza lock di comunicazione centralizzati.
+3. **Confronto Omogeneo dei Due Modelli Ibridi: gRPC Dispatch + OpenMP vs MPI + OpenMP (a parità di Batch = 5.000)**:
+   - A parità rigorosa di dimensione del problema ($N = 5.000$ firme ECDSA) e di ambiente di esecuzione (`Release`, `-O2`, `--bind-to none`), i due modelli mostrano curve di **speedup ed efficienza di scala quasi perfettamente coincidenti**:
+
+   | Configurazione ($P_{eff}$) | OpenMPI + OpenMP (5.000 firme) | gRPC Dispatch + OpenMP (5.000 firme) | Rapporto Speedup (MPI vs gRPC) |
+   |:---:|:---:|:---:|:---:|
+   | **1 rank/nodo × 1 th** ($P_{eff}=1$) | 18,185.1 sig/s (**1.00x**) | 10,169.1 sig/s (**1.00x**) | 1.00x vs 1.00x |
+   | **2 rank/nodi × 1 th** ($P_{eff}=2$) | 34,328.3 sig/s (**1.89x**) | 19,840.3 sig/s (**1.95x**) | 1.89x vs 1.95x |
+   | **4 rank/nodi × 1 th** ($P_{eff}=4$) | 66,209.4 sig/s (**3.64x**) | 37,955.8 sig/s (**3.73x**) | 3.64x vs 3.73x |
+   | **8 rank/nodi × 1 th** ($P_{eff}=8$) | 74,919.4 sig/s (**4.12x**) | 46,084.2 sig/s (**4.53x**) | 4.12x vs 4.53x |
+   | **8 rank/nodi × 2 th** ($P_{eff}=16$) | 109,064.0 sig/s (**6.00x**) | 60,220.7 sig/s (**5.92x**) | **6.00x vs 5.92x** ($E = 0.37$) |
+
+   - **Analisi delle prestazioni**:
+     1. **Throughput Assoluto**: MPI raggiunge un throughput grezzo superiore (~109k vs ~60k sig/s) poiché Open MPI opera interamente in-process con trasporto a memoria condivisa (`vader`/BTL memory-mapped POSIX) senza attraversare stack di rete applicativi. Il benchmark gRPC misura invece il tempo totale *client-side* comprensivo dell'intero round-trip di rete TCP/IP, serializzazione/deserializzazione Protobuf su HTTP/2 e passaggio tra namespace di rete Docker.
+     2. **Scalabilità ed Efficienza**: La progressione dello speedup relativo lungo l'asse del parallelismo distribuito è virtualmente identica (**6.00x** per MPI vs **5.92x** per gRPC a 16 core effettivi, con efficienza di scala $E = 0.37$).
+     3. **Trade-off Architetturale**: MPI massimizza le prestazioni grezze su cluster statici e accoppiati (HPC puro), mentre l'architettura gRPC a microservizi asincroni consente il leasing dinamico on-chain dei nodi, l'integrazione di board IoTronic eterogenee e la tolleranza ai guasti, pagando un overhead di rete costante ma preservando pienamente la scalabilità del calcolo.
+
 
