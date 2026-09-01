@@ -69,7 +69,7 @@ docker compose -f docker-compose.pipeline.yml up -d --build
 
 Introdotto in M11.3 per i test di scalabilità orizzontale e analisi prestazionale:
 - Espone fino a 8 nodi worker C++ indipendenti (`bench-worker-1` .. `bench-worker-8`) su rete isolata `bench-net`.
-- Mappa le porte host da `50051` a `50058` per consentire l'esecuzione concorrente dei benchmark distribuiti (OpenMP intra-nodo + gRPC batch inter-nodo) orchestrati da script dedicati in `hpc-engine/benchmark/`.
+- Mappa le porte host da `50051` a `50058` per consentire l'esecuzione concorrente dei benchmark distribuiti (OpenMP intra-nodo + gRPC batch inter-nodo) orchestrati da script dedicati in `hpc-engine/benchmarks/`.
 
 **Per avviare lo stack di benchmark:**
 ```bash
