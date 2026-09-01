@@ -1,0 +1,100 @@
+services:
+  bench-worker-1:
+    build:
+      context: ..
+      dockerfile: hpc-engine/Dockerfile
+    environment:
+      - PORT=50051
+      - NODE_ID=bench-worker-1
+    ports:
+      - "50051:50051"
+    networks:
+      - bench-net
+
+  bench-worker-2:
+    build:
+      context: ..
+      dockerfile: hpc-engine/Dockerfile
+    environment:
+      - PORT=50051
+      - NODE_ID=bench-worker-2
+    ports:
+      - "50052:50051"
+    networks:
+      - bench-net
+
+  bench-worker-3:
+    build:
+      context: ..
+      dockerfile: hpc-engine/Dockerfile
+    environment:
+      - PORT=50051
+      - NODE_ID=bench-worker-3
+    ports:
+      - "50053:50051"
+    networks:
+      - bench-net
+
+  bench-worker-4:
+    build:
+      context: ..
+      dockerfile: hpc-engine/Dockerfile
+    environment:
+      - PORT=50051
+      - NODE_ID=bench-worker-4
+    ports:
+      - "50054:50051"
+    networks:
+      - bench-net
+
+  bench-worker-5:
+    build:
+      context: ..
+      dockerfile: hpc-engine/Dockerfile
+    environment:
+      - PORT=50051
+      - NODE_ID=bench-worker-5
+    ports:
+      - "50055:50051"
+    networks:
+      - bench-net
+
+  bench-worker-6:
+    build:
+      context: ..
+      dockerfile: hpc-engine/Dockerfile
+    environment:
+      - PORT=50051
+      - NODE_ID=bench-worker-6
+    ports:
+      - "50056:50051"
+    networks:
+      - bench-net
+
+  bench-worker-7:
+    build:
+      context: ..
+      dockerfile: hpc-engine/Dockerfile
+    environment:
+      - PORT=50051
+      - NODE_ID=bench-worker-7
+    ports:
+      - "50057:50051"
+    networks:
+      - bench-net
+
+  bench-worker-8:
+    build:
+      context: ..
+      dockerfile: hpc-engine/Dockerfile
+    environment:
+      - PORT=50051
+      - NODE_ID=bench-worker-8
+    ports:
+      - "50058:50051"
+    networks:
+      - bench-net
+
+networks:
+  bench-net:
+    driver: bridge

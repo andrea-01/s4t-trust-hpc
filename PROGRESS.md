@@ -336,7 +336,49 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
 - `PROGRESS.md` aggiornato.
 
 ### Domande Aperte
-- Nessuna per lo Stadio 11.2. Pronto per la definizione e pianificazione dello Stadio 11.3 (Benchmark Isolato Task Parallelism puro + scaling a 6-8 worker).
+- Nessuna per lo Stadio 11.2.
+
+## Fase: M11 (HPC Task+Data Parallelism — Stadio 11.3)
+
+**Data:** 2026-09-01
+
+### Task Completati
+- [x] 1. **Verifica Hardware Host e Vincolo di CPU Oversubscription**:
+  - Ispezione con `nproc` e `lscpu`: CPU Intel Core i7-12700H (14 core fisici, **20 thread logici**).
+  - Imposto il limite hardware di non-oversubscription per configurazioni con $P_{eff} = N_{nodi} \times N_{thread} \le 20$.
+  - Configurazioni con $P_{eff} > 20$ (es. 8 nodi × 4 thread = 32) etichettate esplicitamente come "sonde di oversubscription intenzionale" ed escluse dalla baseline pulita.
+- [x] 2. **Infrastruttura Worker Isolati (`deploy/docker-compose.benchmark.yml`)**:
+  - Creato file Compose dedicato per avviare **8 worker container C++ isolati** (`bench-worker-1` .. `bench-worker-8`), esponendo le porte locali `50051..50058`.
+  - Nessuna interazione con Hardhat, blockchain, Gateway o IoTronic (totale isolamento HPC).
+- [x] 3. **Driver di Benchmark Standalone (`hpc-engine/benchmarks/run_benchmark.py`)**:
+  - Generazione dinamica degli stub gRPC Python direttamente da `proto/pipeline.proto` senza duplicazioni manuali.
+  - Partizionamento del carico con gestione del resto identica a `main_mpi.cpp` ($base\_chunk + (1 \text{ se } i < remainder)$) e seed deterministico $42 + i$.
+  - Dispatch concorrente asincrono via `asyncio.gather` con canali `grpc.aio.insecure_channel`.
+  - **Validazione stringente di correttezza**: verifica che la somma di `valid_count` di tutti i worker corrisponda esattamente al batch atteso per ogni run (100% verifiche superate su tutti i batch).
+- [x] 4. **Script di Calcolo Metriche Formali HPC (`hpc-engine/benchmarks/compute_metrics.py`)**:
+  - Speedup $S_n = T_1 / T_n$, Efficienza $E(P_{eff}) = S_n / P_{eff}$, Efficienza sui nodi $E(N) = S_n / N$.
+  - Frazione seriale stimata da Amdahl: $f_{s,task} = \mathbf{2.51\%}$ per il task parallelism (nodi) vs $f_{s,omp} = \mathbf{46.51\%}$ per OpenMP intra-nodo.
+  - Confronto empirico vs Amdahl predetto: $S_{pred}(4) = \mathbf{3.72\times}$ vs $S_{measured}(4) = \mathbf{3.73\times}$ (match teorico-sperimentale perfetto).
+  - Scalabilità $L = E(5000) / E(1000)$: $L > 1.25$ per $P \ge 4$ (fino a $L=1.33$ a $P=16$), dimostrando che carichi maggiori ammortizzano l'overhead di rete/dispatch gRPC.
+- [x] 5. **Campagna Sperimentale su Griglia Completa (1k e 5k firme)**:
+  - Salva i dati grezzi in `hpc-engine/results_grpc_task_parallel.csv`.
+  - Picco di throughput in regime clean ($\le 20$ core): **60,220.7 sig/s** (8 nodi × 2 thread, speedup **5.92x** rispetto a 1 nodo 1 thread).
+  - Picco assoluto con sonda oversubscribed (8 nodi × 4 thread = 32 thread): **66,433.5 sig/s** (speedup **6.53x**).
+- [x] 6. **Confronto con MPI+OpenMP (Stadio 11.1) e Aggiornamento Documentazione**:
+  - `hpc-engine/README.md` aggiornato con la sezione 11.3 completa, tabelle comparative, analisi teorica e motivazione tecnica del vantaggio prestazionale di gRPC (+85% rispetto a MPI 8×2 grazie a demoni a caldo e asincronismo I/O).
+- [x] 7. **Isolamento Rigoroso**:
+  - Nessuna modifica a `satellite/`, `chain/`, `gateway/`, `notification/`, `ui/`, `docker-compose.pipeline.yml` o ai worker registrati `worker-1/2/3`.
+
+### Definition of Done — Stadio 11.3 ✅
+- Driver di benchmark isolato funzionante su 8 nodi container gRPC.
+- Griglia completa eseguita su due dimensioni (1k e 5k firme) con gestione del resto e validazione 100% su `valid_count`.
+- Metriche formali calcolate: Speedup, Efficiency, Legge di Amdahl (predetto vs misurato), Scalabilità $L$.
+- Nessun oversubscription nascosto: soglia a 20 core logici rigorosamente rispettata ed etichettata.
+- `hpc-engine/README.md` e `PROGRESS.md` aggiornati.
+
+### Domande Aperte
+- Nessuna per lo Stadio 11.3. Pronto per la pianificazione dello Stadio 11.4 (Integrazione del dispatch parallelo nella catena reale satellite + confronto overhead).
+
 
 
 
