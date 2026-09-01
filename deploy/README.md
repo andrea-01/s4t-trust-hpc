@@ -2,39 +2,87 @@
 
 Questa cartella contiene i file Docker Compose per orchestrare ed eseguire l'intero ecosistema `s4t-trust-hpc` localmente.
 
-L'architettura del progetto è suddivisa in due stack logici, gestiti da due compose file separati, che mantengono l'isolamento dei componenti ma possono comunicare tramite una rete condivisa (`s4t-bridge`).
+L'architettura del progetto è suddivisa in stack logici gestiti da compose file separati, che mantengono l'isolamento dei componenti comunicando tramite reti Docker dedicate (in particolare `s4t-bridge`).
+
+---
 
 ## 1. Stack Base (`docker-compose.yml`)
-Questo stack contiene l'infrastruttura fondamentale di trust e onboarding.
+
+Questo stack contiene l'infrastruttura fondamentale di trust, onboarding e monitoraggio.
+
 I container esposti sono:
-- `hardhat-node`: Nodo blockchain locale.
+- `hardhat-node`: Nodo blockchain locale Ethereum/Hardhat [porta 8545].
+- `contract-deployer`: Script di deployment iniziale dei contratti (`OnboardingTrust.sol` e `LeasingRegistry.sol`).
+- `owner-auto-approver`: Demone reattivo (sostituisce i vecchi script di simulazione manuale) che intercetta gli eventi `OnboardingRequested` e auto-approva on-chain i dispositivi che corrispondono all'allowlist definita in `chain/config/trusted-devices.json`.
 - `gateway`: Proxy REST (FastAPI) [porta 8000].
-- `notification`: Demone invio mail (background) e Mailpit SMTP catcher [porta 8025].
-- `ui`: Dashboard utente (FastAPI) [porta 8080].
-- `client-admin` / `client-owner`: Script effimeri utilizzati per test e simulazioni iniziali, eseguiti in batch.
+- `mailpit`: SMTP catcher locale con interfaccia web per ispezionare le notifiche email [porta 8025 / SMTP 1025].
+- `notification`: Demone Python indipendente per l'invio delle email ai proprietari dei device con tracciamento dello stato su file.
+- `ui`: Dashboard web (FastAPI + Jinja2) [porta 8080].
+- `auto-onboard`: Script di bootstrapping che registra e approva on-chain i worker standard (`worker-1`, `worker-2`, `worker-3`).
 
 **Per avviare lo stack base:**
 ```bash
+cp .env.example .env
 docker compose up -d --build
 ```
 
-## 2. Stack Pipeline (`docker-compose.pipeline.yml`)
-Questo stack contiene l'infrastruttura per il calcolo distribuito (HPC).
-I container esposti sono:
-- `satellite`: Orchestratore HPC (FastAPI) [porta 8001].
-- `worker-1`, `worker-2`, `worker-3`: Nodi C++ che eseguono le computazioni parallele e offrono l'interfaccia gRPC.
-- `auto-onboard`: Script effimero che, all'avvio, contatta il `gateway` per registrare e approvare i worker on-chain in automatico.
+---
+
+## 2. Configurazione e Autenticazione (`.env`)
+
+Il file `.env` (creato a partire da `.env.example`) definisce le configurazioni essenziali per la sicurezza e l'integrazione:
+- **Autenticazione HTTP Basic**: `UI_ADMIN_USERNAME` e `UI_ADMIN_PASSWORD` proteggono l'accesso alla dashboard `ui/` e agli endpoint amministrativi del `gateway/` (`/trust/stacks`).
+- **Custodia Chiavi**: `ADMIN_PRIVATE_KEY` per la firma delle transazioni blockchain dal gateway.
+- **Credenziali Keystone**: parametri `OS_AUTH_URL`, `OS_USERNAME`, `OS_PASSWORD`, `OS_PROJECT_NAME` per consentire al satellite di autenticarsi con lo stack IoTronic.
+
+---
+
+## 3. Stack IoTronic Esterno (Prerequisito Pipeline)
+
+A partire da M9.3, l'esecuzione HPC non chiama direttamente i container C++, ma passa attraverso l'infrastruttura di gestione IoTronic (Stack4Things). 
+Lo stack IoTronic risiede nel repository sibling esterno `Stack4Things_DockerCompose_deployment` e crea la rete `stack4things_dockercompose_deployment_s4t`.
+
+I container Lightning-Rod (board IoTronic) sono connessi sia alla rete `s4t` che alla rete `s4t-bridge`, con il plugin gRPC (`plugin_bundle.py`) iniettato.
+
+**Avvio:**
+```bash
+cd ../Stack4Things_DockerCompose_deployment
+docker compose up -d
+```
+
+---
+
+## 4. Stack Pipeline (`docker-compose.pipeline.yml`)
+
+Questo stack contiene i componenti per il calcolo distribuito:
+- `satellite`: Orchestratore HPC (FastAPI) [porta 8001], connesso sia a `s4t-bridge` sia alla rete IoTronic `stack4things_dockercompose_deployment_s4t`.
+- `worker-1`, `worker-2`, `worker-3`: Nodi di calcolo C++ con server gRPC (porta 50051) connessi a `s4t-bridge` e `pipeline-net`.
 
 **Per avviare lo stack pipeline:**
 ```bash
 docker compose -f docker-compose.pipeline.yml up -d --build
 ```
 
-## Setup di Rete (Importante)
-Affinché lo stack pipeline (`satellite`, `auto-onboard`) possa comunicare in modo sicuro con lo stack base (`gateway`), è necessario creare la rete esterna condivisa **una sola volta** sul proprio demone Docker prima di avviare gli stack:
+---
+
+## 5. Stack Benchmark Distribuito (`docker-compose.benchmark.yml`)
+
+Introdotto in M11.3 per i test di scalabilità orizzontale e analisi prestazionale:
+- Espone fino a 8 nodi worker C++ indipendenti (`bench-worker-1` .. `bench-worker-8`) su rete isolata `bench-net`.
+- Mappa le porte host da `50051` a `50058` per consentire l'esecuzione concorrente dei benchmark distribuiti (OpenMP intra-nodo + gRPC batch inter-nodo) orchestrati da script dedicati in `hpc-engine/benchmark/`.
+
+**Per avviare lo stack di benchmark:**
+```bash
+docker compose -f docker-compose.benchmark.yml up -d --build
+```
+
+---
+
+## 6. Setup di Rete Condivisa (`s4t-bridge`)
+
+Affinché i diversi stack possano comunicare in modo trasparente e sicuro, è necessario creare la rete esterna condivisa **una sola volta** sul demone Docker locale:
 
 ```bash
 docker network create s4t-bridge
 ```
-
-Se la rete non è creata, il demone Docker rifiuterà l'avvio lamentando l'assenza della rete esterna definita nei compose.
+Se la rete non è presente, Docker rifiuterà l'avvio segnalando l'assenza della rete esterna dichiarata nei file Compose.
