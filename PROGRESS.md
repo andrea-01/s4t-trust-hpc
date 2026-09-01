@@ -378,8 +378,44 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
 - Soglia dei 20 core logici reali rispettata con sonda oversubscribed esplicitamente etichettata.
 - `hpc-engine/README.md`, `PROGRESS.md` e `AGENTS.md` aggiornati.
 
+## Fase: M11 (HPC Task+Data Parallelism — Stadio 11.4)
+
+**Data:** 2026-09-01
+
+### Task Completati
+- [x] 1. **Verifica & Ciclo di Vita Aggiornamento Plugin IoTronic**:
+  - Ispezione preliminare di `s4t-plugin/plugin_template.py`: confermato che il plugin non accettava genericamente qualsiasi operazione, ma era vincolato a `INCREMENT_COUNTER`.
+  - Investigazione sperimentale su IoTronic CLI: verificato che per aggiornare un plugin già iniettato è necessario rimuoverlo dalle board (`plugin-remove`), eliminarlo dal registro (`plugin-delete`), ricrearlo (`plugin-create`) e re-iniettarlo (`plugin-inject`), documentando l'esito in `s4t-plugin/IOTRONIC_NOTES.md`.
+- [x] 2. **Estensione Additiva del Plugin S4T (`plugin_template.py` / `build_plugin.sh`)**:
+  - Aggiunto il supporto parametrico per l'operazione `VERIFY_SIGNATURES_BATCH` (batch_size, num_threads, seed), mantenendo `INCREMENT_COUNTER` come default retrocompatibile.
+  - Sostituito il caricamento dinamico via zipimport con l'estrazione fisica su directory temporanea `/tmp/pipeline_stubs/` per evitare anomalie di caching e deallocazione dei descrittori protobuf a runtime.
+  - Re-iniettato il bundle aggiornato sulle 3 board di produzione (`worker-1`, `worker-2`, `worker-3`) e sulla board `test_board`.
+  - **Gate di regressione sequenziale superato**: eseguito immediatamente `test_full_pipeline_e2e_sequential` con esito positivo (42 -> 43 -> 44 -> 45 in 1.17s).
+- [x] 3. **Nuovo Endpoint di Dispatch Parallelo nel Satellite (`satellite/app/`)**:
+  - Implementata la funzione `run_parallel_verification` in `satellite/app/pipeline_client.py`: suddivisione del batch totale con gestione del resto identica a MPI/Stadio 3, invocazione concorrente asincrona tramite `asyncio.gather` e chiamate REST IoTronic, parsing con regex ed eccezione immediata in caso di mancata verifica del 100% delle firme.
+  - Aggiunto il modello `ParallelVerifyRequest` e l'endpoint `POST /pipeline/{pipeline_id}/run-parallel` in `satellite/app/main.py`.
+- [x] 4. **Suite di Test Completa (Nessun Mock)**:
+  - Esteso `satellite/tests/test_integration.py` con `test_parallel_verification_e2e` su 3 nodi leased (batch=100 diviso in chunk 34, 33, 33 con validazione 100/100).
+  - Tutti i 5 test passano al 100% all'interno dell'infrastruttura reale containerizzata.
+- [x] 5. **Campagna Sperimentale di Confronto & Quantificazione dell'Overhead**:
+  - Eseguito benchmark comparativo controllato a parità di carico (1, 2, 3 nodi a 1 thread, batch da 1.000 e 5.000 firme, 2 ripetizioni) salvando i dati in `hpc-engine/results_real_chain_overhead.csv`.
+  - **Overhead quantificato in modo trasparente**: la catena applicativa reale (Keystone + IoTronic Conductor + Crossbar WAMP + Lightning-Rod) introduce un overhead additivo di trasporto/brokeraggio di **$\sim 0.16\text{s} - 0.29\text{s}$** per round di dispatch.
+  - **Ammortamento della granularità**: su batch da 1.000 firme il tempo di calcolo è breve (~30-50ms) e l'overhead domina (ratio 2.9x–7.5x); su batch da 5.000 firme il calcolo ammortizza la latenza di coordinamento (ratio 1.34x–2.46x), permettendo alla catena reale di scalare fino al picco di **10.393 sig/s su 3 nodi** (rispetto ai 25.663 sig/s del benchmark isolato gRPC diretto).
+- [x] 6. **Aggiornamento Documentazione**:
+  - `satellite/README.md` aggiornato con la sezione dettagliata sul confronto prestazionale e la tabella comparativa completa.
+  - `s4t-plugin/IOTRONIC_NOTES.md` aggiornato.
+
+### Definition of Done — Stadio 11.4 ✅
+- Plugin S4T esteso in modo additivo e verificato sulle board IoTronic reali.
+- Gate di regressione sequenziale passato senza regressioni.
+- Nuovo endpoint `POST /pipeline/{pipeline_id}/run-parallel` funzionante e coperto da test d'integrazione e2e.
+- Confronto controllato tra dispatch isolato e catena reale eseguito su 1, 2 e 3 nodi.
+- Overhead e throughput misurati e documentati con rigore e trasparenza nei README e in CSV.
+- `PROGRESS.md` e `AGENTS.md` aggiornati.
+
 ### Domande Aperte
-- Nessuna per lo Stadio 11.3. Pronto per la pianificazione dello Stadio 11.4 (Integrazione del dispatch parallelo nella catena reale satellite + confronto overhead).
+- Nessuna per lo Stadio 11.4. Pronto per la pianificazione dello Stadio 11.5 (Report finale metriche HPC e chiusura milestone).
+
 
 
 

@@ -95,3 +95,22 @@ I test automatici implementati in `satellite/tests/test_integration.py` sono sta
 - `test_concurrent_leasing_two_pipelines`: Verifica la tenuta del modello di concorrenza con 2 pipeline attive contemporaneamente (Pipeline A con 2 nodi, Pipeline B con 1 nodo), fallimento atteso su richieste eccedenti la capacità, esecuzione concorrente e rilascio corretto di tutte le risorse.
 - `test_error_handling_and_validation`: Verifica la gestione degli errori per parametri non validi e pipeline inesistenti.
 
+## Stadio M11.4: Investigazione Plugin & Ciclo di Vita Aggiornamento
+
+### 1. Ispezione del Plugin Esistente (`plugin_template.py`)
+- **Verifica condotta**: Ispezione diretta del sorgente versionato `s4t-plugin/plugin_template.py`.
+- **Esito**: Il plugin non inoltrava genericamente qualunque operazione supportata dal worker C++, ma era hardcoded per la sola operazione `INCREMENT_COUNTER` (`req = pipeline_pb2.TaskRequest(operation=pipeline_pb2.OperationType.INCREMENT_COUNTER, input_value=...)`) e per i soli parametri `input_value` e `worker_addr`.
+- **Decisione**: È necessaria una modifica additiva al plugin per supportare `VERIFY_SIGNATURES_BATCH` preservando al 100% la compatibilità con `INCREMENT_COUNTER`.
+
+### 2. Investigazione Sperimentale: Ciclo di Vita Aggiornamento Plugin in IoTronic
+Verificato sperimentalmente tramite CLI `iotronic` e ispezione dei comandi (`plugin-create`, `plugin-update`, `plugin-remove`, `plugin-inject`, `plugin-delete`):
+- `plugin-create` consente la creazione di plugin con lo stesso nome generando un nuovo UUID, causando ambiguità di risoluzione.
+- `plugin-update <plugin> code=<file>` tratta il valore come stringa letterale senza caricare il file né propagarlo alle board.
+- `plugin-delete <plugin>` fallisce con vincolo di foreign key (`DBReferenceError / injection_plugins_ibfk_2`) se il plugin è attualmente iniettato su una o più board.
+- **Flusso corretto e verificato per l'aggiornamento**:
+  1. Rimuovere il plugin da tutte le board su cui è presente: `iotronic plugin-remove <board> <plugin_name>`
+  2. Eliminare la vecchia definizione del plugin dal registro IoTronic: `iotronic plugin-delete <plugin_name>`
+  3. Registrare il nuovo bundle compilato: `iotronic plugin-create --callable <plugin_name> <path_bundle.py>`
+  4. Re-iniettare il plugin aggiornato sulle board: `iotronic plugin-inject <board> <plugin_name>`
+
+

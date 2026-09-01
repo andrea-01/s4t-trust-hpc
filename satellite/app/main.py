@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from node_registry import registry
-from pipeline_client import run_pipeline_task
+from pipeline_client import run_pipeline_task, run_parallel_verification
 
 app = FastAPI(title="S4T Trust HPC - Satellite")
 
@@ -10,6 +10,11 @@ class LeaseRequest(BaseModel):
 
 class RunRequest(BaseModel):
     initial_value: int
+
+class ParallelVerifyRequest(BaseModel):
+    total_batch: int
+    num_threads: int = 1
+    base_seed: int = 42
 
 @app.post("/pipeline/lease")
 async def lease_pipeline(req: LeaseRequest):
@@ -30,5 +35,25 @@ async def run_pipeline(pipeline_id: str, req: RunRequest):
     try:
         result = await run_pipeline_task(pipeline_id, nodes, req.initial_value)
         return {"pipeline_id": pipeline_id, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/pipeline/{pipeline_id}/run-parallel")
+async def run_pipeline_parallel(pipeline_id: str, req: ParallelVerifyRequest):
+    if req.total_batch <= 0:
+        raise HTTPException(status_code=422, detail="total_batch must be > 0")
+    if req.num_threads <= 0:
+        raise HTTPException(status_code=422, detail="num_threads must be > 0")
+
+    nodes = await registry.get_pipeline_nodes(pipeline_id)
+    try:
+        result = await run_parallel_verification(
+            pipeline_id=pipeline_id,
+            nodes=nodes,
+            total_batch=req.total_batch,
+            num_threads=req.num_threads,
+            base_seed=req.base_seed
+        )
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

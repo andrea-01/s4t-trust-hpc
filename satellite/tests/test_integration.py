@@ -159,3 +159,40 @@ async def test_unexpected_plugin_response_format(monkeypatch):
 
     assert "Unexpected response format from plugin on node worker-1" in str(exc_info.value)
     assert "UNKNOWN_RESPONSE_FORMAT_WITHOUT_REGEX_MATCH" in str(exc_info.value)
+
+@pytest.mark.asyncio
+async def test_parallel_verification_e2e(async_client):
+    """
+    Test 5: Full parallel batch verification across 3 leased nodes via real IoTronic REST + Gateway leasing.
+    Checks chunking with remainder, 100% valid signatures verification, timing, throughput and response structure.
+    """
+    # 1. Lease 3 nodes
+    lease_resp = await async_client.post("/pipeline/lease", json={"count": 3})
+    assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.text}"
+    pipeline_id = lease_resp.json()["pipeline_id"]
+
+    try:
+        # 2. Run parallel verification with batch=100 (100 / 3 -> chunks 34, 33, 33)
+        run_resp = await async_client.post(
+            f"/pipeline/{pipeline_id}/run-parallel",
+            json={"total_batch": 100, "num_threads": 1, "base_seed": 42}
+        )
+        assert run_resp.status_code == 200, f"Run parallel failed: {run_resp.text}"
+        data = run_resp.json()
+        assert data["pipeline_id"] == pipeline_id
+        assert data["num_nodes"] == 3
+        assert data["total_batch_size"] == 100
+        assert data["total_valid_count"] == 100
+        assert data["total_time_seconds"] > 0
+        assert data["aggregate_throughput"] > 0
+        assert len(data["node_results"]) == 3
+
+        # Check chunk sizes & valid counts
+        chunks = [r["chunk_size"] for r in data["node_results"]]
+        assert chunks == [34, 33, 33]
+        valid_counts = [r["valid_count"] for r in data["node_results"]]
+        assert valid_counts == [34, 33, 33]
+    finally:
+        # 3. Release pipeline
+        release_resp = await async_client.post(f"/pipeline/{pipeline_id}/release")
+        assert release_resp.status_code == 200
