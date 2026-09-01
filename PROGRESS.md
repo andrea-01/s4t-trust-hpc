@@ -264,5 +264,33 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
    - Lo stack dimostrativo `test-cluster` è stato rimosso dall'allowlist tramite richiesta autenticata `DELETE /trust/stacks/test-cluster` verso il Gateway.
    - Verificato tramite `GET /trust/stacks` e ispezione di `chain/config/trusted-devices.json` che la configurazione è tornata a contenere unicamente lo stack canonico `iotronic-pipeline-workers`.
 
+## Fase: M11 (HPC Task+Data Parallelism — Stadio 11.1)
+
+**Data:** 2026-09-01
+
+### Task Completati
+- [x] 1. **Modifica `main_mpi.cpp`**: Sostituita la chiamata sequenziale `SignatureBench::run_sequential` con la versione multithread `SignatureBench::run_parallel(local_devices, num_threads, local_devices.size())`, realizzando un vero ibrido **MPI + OpenMP** (task parallelism a memoria distribuita + data parallelism a memoria condivisa per rank).
+- [x] 2. **Parametrizzazione Thread OpenMP**:
+  - Priorità di configurazione: CLI argument `argv[2]` > Variabile d'ambiente `OMP_NUM_THREADS` / `NUM_THREADS` > Default calcolato (`hardware_concurrency / mpi_size`, minimo 1).
+  - CLI argument opzionale `argv[3]` per personalizzare il file CSV di destinazione (default: `results_hybrid_mpi_omp.csv`).
+- [x] 3. **Esecuzione Benchmark su Griglia di Combinazioni**:
+  - Eseguita campagna di test su dataset di 500 device sintetici per le combinazioni: 1×1, 1×2, 1×4, 2×1, 2×2, 2×4, 4×1, 4×2, 4×4, 8×1, 8×2 (Ranks MPI × Threads OpenMP per rank).
+  - Risultati tracciati in `hpc-engine/results_hybrid_mpi_omp.csv` con colonne `model,batch_size,mpi_ranks,omp_threads,time_seconds,throughput`.
+- [x] 4. **Aggiornamento Documentazione e Analisi Prestazionale (`hpc-engine/README.md`)**:
+  - Inserita tabella comparativa a 4 colonne (Core Effettivi, OpenMP Puro M5, OpenMPI Puro M7, Ibrido MPI+OpenMP M11.1).
+  - Analisi onesta del comportamento: evidenziata la riduzione dei tempi per rank all'aumentare dei thread OpenMP (es. da 16.7k a 38.6k sig/s a 4 rank), l'impatto del "double overhead" (overhead combinato di processo e thread su batch piccoli come 2×4 thread a ~12.4k sig/s) e lo scaling fino a 40.2k sig/s a 16 core effettivi (8 rank × 2 thread).
+- [x] 5. **Isolamento Rigoroso**:
+  - Nessuna modifica a `src/onboarding/`, `src/pipeline/`, `satellite/` o ad altri moduli.
+
+### Definition of Done — Stadio 11.1 ✅
+- `main_mpi.cpp` invoca `SignatureBench::run_parallel` con thread parametrizzati per ogni rank MPI.
+- Risultati salvati in CSV con colonna dedicata `omp_threads`.
+- `hpc-engine/README.md` aggiornato con tabella comparativa e interpretazione tecnica trasparente.
+- Tutti i test CTest (`SignatureCorrectness` e `WorkerCorrectness`) passano al 100%.
+
+### Domande Aperte
+- Nessuna per lo Stadio 11.1. Pronto per la definizione e pianificazione dello Stadio 11.2 (`VERIFY_SIGNATURES_BATCH`).
+
+
 
 

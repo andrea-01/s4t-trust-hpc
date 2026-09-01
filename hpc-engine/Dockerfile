@@ -16,8 +16,8 @@ WORKDIR /app
 
 COPY . /app
 
-# Compile pipeline worker and mpi experiment
-RUN mkdir -p build && cd build && cmake ../hpc-engine && make pipeline_worker hpc_engine_mpi
+# Compile pipeline worker, mpi experiment, and tests
+RUN mkdir -p build && cd build && cmake ../hpc-engine && make -j
 
 ENV PORT=50051
 EXPOSE 50051
