@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Benchmark Comparison: Isolated gRPC Dispatch vs Real S4T/IoTronic Chain
-Stage 11.4 - HPC & Distributed Systems Integration
+Stage 11.4 - Multi-run Statistical Evaluation with Individual Runs Logging
 """
 
 import asyncio
@@ -9,6 +9,7 @@ import time
 import csv
 import sys
 import os
+import statistics
 from typing import List, Dict, Any
 
 # Ensure app is in path
@@ -94,16 +95,16 @@ async def run_comparison_campaign():
         (3, 5000, 1),
     ]
 
-    NUM_REPETITIONS = 2
+    NUM_REPETITIONS = 6
     results = []
 
     print("=" * 80)
-    print("STARTING CONTROLLED COMPARISON: ISOLATED gRPC vs REAL S4T/IOTRONIC CHAIN")
-    print(f"Configurations: {len(test_configs)}, Repetitions: {NUM_REPETITIONS}")
+    print("CONTROLLED STATISTICAL COMPARISON: ISOLATED gRPC vs REAL S4T/IOTRONIC CHAIN")
+    print(f"Configurations: {len(test_configs)}, Repetitions per config: {NUM_REPETITIONS}")
     print("=" * 80)
 
     for node_count, batch_size, num_threads in test_configs:
-        print(f"\n---> Testing Config: {node_count} node(s), batch={batch_size}, threads={num_threads}")
+        print(f"\n---> Config: {node_count} node(s), batch={batch_size}, threads={num_threads}")
         
         # 1. Lease nodes on-chain via Registry/Gateway
         pipeline_id = await registry.lease_nodes(node_count)
@@ -118,12 +119,11 @@ async def run_comparison_campaign():
                 res_iso = await run_isolated_parallel_batch(nodes, batch_size, num_threads, base_seed=100 + rep*10)
                 iso_times.append(res_iso["total_time_seconds"])
                 iso_throughputs.append(res_iso["throughput"])
-                print(f"     [Isolated rep {rep+1}] Time: {res_iso['total_time_seconds']:.4f}s, Tput: {res_iso['throughput']:.1f} sig/s")
 
             best_iso_time = min(iso_times)
-            avg_iso_time = sum(iso_times) / len(iso_times)
+            avg_iso_time = statistics.mean(iso_times)
             best_iso_tput = max(iso_throughputs)
-            avg_iso_tput = sum(iso_throughputs) / len(iso_throughputs)
+            avg_iso_tput = statistics.mean(iso_throughputs)
 
             # 3. Run Real Chain Benchmark (Satellite -> Keystone/IoTronic REST -> WAMP -> Plugin -> Worker)
             real_times = []
@@ -135,18 +135,17 @@ async def run_comparison_campaign():
                 real_throughputs.append(res_real["aggregate_throughput"])
                 max_w_time = max(r["worker_time_seconds"] for r in res_real["node_results"])
                 worker_times.append(max_w_time)
-                print(f"     [Real Chain rep {rep+1}] Time: {res_real['total_time_seconds']:.4f}s, Tput: {res_real['aggregate_throughput']:.1f} sig/s, Max Worker Compute: {max_w_time:.4f}s")
+                print(f"     [Real Rep {rep+1}] Total: {res_real['total_time_seconds']:.4f}s (Tput: {res_real['aggregate_throughput']:.1f} sig/s), Max Worker Compute: {max_w_time:.4f}s")
 
             best_real_time = min(real_times)
-            avg_real_time = sum(real_times) / len(real_times)
+            avg_real_time = statistics.mean(real_times)
+            stdev_real_time = statistics.stdev(real_times) if len(real_times) > 1 else 0.0
             best_real_tput = max(real_throughputs)
-            avg_real_tput = sum(real_throughputs) / len(real_throughputs)
-            avg_worker_time = sum(worker_times) / len(worker_times)
+            avg_real_tput = statistics.mean(real_throughputs)
+            avg_worker_time = statistics.mean(worker_times)
 
             # Overhead metrics
-            delta_time_best = best_real_time - best_iso_time
             delta_time_avg = avg_real_time - avg_iso_time
-            overhead_ratio_best = best_real_time / best_iso_time if best_iso_time > 0 else 1.0
             overhead_ratio_avg = avg_real_time / avg_iso_time if avg_iso_time > 0 else 1.0
 
             row = {
@@ -159,15 +158,18 @@ async def run_comparison_campaign():
                 "iso_avg_tput": avg_iso_tput,
                 "real_best_time_s": best_real_time,
                 "real_avg_time_s": avg_real_time,
+                "real_stdev_time_s": stdev_real_time,
                 "real_best_tput": best_real_tput,
                 "real_avg_tput": avg_real_tput,
                 "avg_worker_compute_time_s": avg_worker_time,
                 "delta_time_avg_s": delta_time_avg,
-                "overhead_ratio_avg": overhead_ratio_avg
+                "overhead_ratio_avg": overhead_ratio_avg,
+                "individual_real_times_s": ";".join(f"{t:.4f}" for t in real_times),
+                "individual_iso_times_s": ";".join(f"{t:.4f}" for t in iso_times)
             }
             results.append(row)
 
-            print(f"     => OVERHEAD SUMMARY: delta={delta_time_avg:.4f}s ({overhead_ratio_avg:.2f}x of isolated time)")
+            print(f"     => SUMMARY: Isolated={avg_iso_time:.4f}s ({avg_iso_tput:.1f} sig/s) | Real={avg_real_time:.4f}s +/- {stdev_real_time:.4f}s ({avg_real_tput:.1f} sig/s) | Delta={delta_time_avg:.4f}s ({overhead_ratio_avg:.2f}x)")
 
         finally:
             await registry.release_nodes(pipeline_id)
@@ -181,13 +183,14 @@ async def run_comparison_campaign():
     print(f"\n[+] Saved detailed results to {csv_path}")
 
     # Print summary Markdown table
-    print("\n" + "=" * 80)
-    print("FINAL COMPARISON TABLE")
-    print("=" * 80)
-    print("| Batch | Nodi | T_isolato (avg) | T_reale (avg) | T_worker puro | Overhead delta | Overhead Ratio | Tput Isolato | Tput Reale |")
-    print("|-------|------|-----------------|---------------|---------------|----------------|----------------|--------------|------------|")
+    print("\n" + "=" * 100)
+    print("FINAL MULTI-RUN STATISTICAL COMPARISON TABLE")
+    print("=" * 100)
+    print("| Batch | Nodi | T_isolato (avg) | T_reale (avg +/- std) | T_worker puro | Overhead delta | Overhead Ratio | Tput Isolato | Tput Reale |")
+    print("|-------|------|-----------------|-----------------------|---------------|----------------|----------------|--------------|------------|")
     for r in results:
-        print(f"| {r['batch_size']:<5} | {r['nodes']:<4} | {r['iso_avg_time_s']:>13.4f}s | {r['real_avg_time_s']:>11.4f}s | {r['avg_worker_compute_time_s']:>11.4f}s | {r['delta_time_avg_s']:>12.4f}s | {r['overhead_ratio_avg']:>12.2f}x | {r['iso_avg_tput']:>10.1f}/s | {r['real_avg_tput']:>8.1f}/s |")
+        real_str = f"{r['real_avg_time_s']:.4f}s +/- {r['real_stdev_time_s']:.3f}s"
+        print(f"| {r['batch_size']:<5} | {r['nodes']:<4} | {r['iso_avg_time_s']:>13.4f}s | {real_str:>21} | {r['avg_worker_compute_time_s']:>11.4f}s | {r['delta_time_avg_s']:>12.4f}s | {r['overhead_ratio_avg']:>12.2f}x | {r['iso_avg_tput']:>10.1f}/s | {r['real_avg_tput']:>8.1f}/s |")
 
 if __name__ == "__main__":
     asyncio.run(run_comparison_campaign())
