@@ -76,24 +76,34 @@ add_custom_command(
 add_executable(pipeline_worker
     src/pipeline/main_worker.cpp
     src/pipeline/worker_server.cpp
+    src/onboarding/device_generator.cpp
+    src/onboarding/signature_bench.cpp
     ${PROTO_SRC}
     ${GRPC_SRC}
 )
 
-target_include_directories(pipeline_worker PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src/pipeline)
+target_include_directories(pipeline_worker PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src/pipeline src/onboarding)
 target_link_libraries(pipeline_worker
     PRIVATE ${GRPC_LIBRARIES} ${PROTOBUF_LIBRARIES}
+    PRIVATE OpenMP::OpenMP_CXX
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
 )
 
 add_executable(test_worker
     tests/test_worker.cpp
     src/pipeline/worker_server.cpp
+    src/onboarding/device_generator.cpp
+    src/onboarding/signature_bench.cpp
     ${PROTO_SRC}
     ${GRPC_SRC}
 )
-target_include_directories(test_worker PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src/pipeline)
+target_include_directories(test_worker PRIVATE ${CMAKE_CURRENT_BINARY_DIR} src/pipeline src/onboarding)
 target_link_libraries(test_worker
     PRIVATE ${GRPC_LIBRARIES} ${PROTOBUF_LIBRARIES}
+    PRIVATE OpenMP::OpenMP_CXX
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
 )
 add_test(NAME WorkerCorrectness COMMAND test_worker)
 

@@ -33,6 +33,7 @@ BenchResult SignatureBench::run_sequential(const std::vector<Device>& devices, s
     res.num_threads = 1;
     res.time_seconds = diff.count();
     res.throughput = (res.time_seconds > 0) ? (actual_limit / res.time_seconds) : 0.0;
+    res.valid_count = valid_count;
     
     if (valid_count != actual_limit) {
         std::cerr << "Warning: not all signatures were valid in sequential run (" 
@@ -76,6 +77,7 @@ BenchResult SignatureBench::run_parallel(const std::vector<Device>& devices, int
     res.num_threads = num_threads;
     res.time_seconds = diff.count();
     res.throughput = (res.time_seconds > 0) ? (actual_limit / res.time_seconds) : 0.0;
+    res.valid_count = valid_count;
     
     if (valid_count != actual_limit) {
         std::cerr << "Warning: not all signatures were valid in parallel run (" 

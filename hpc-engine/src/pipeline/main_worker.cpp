@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <string>
 
-int main(int argc, char** argv) {
+int main(int /*argc*/, char** /*argv*/) {
     std::string port = "50051";
     if (const char* env_port = std::getenv("PORT")) {
         port = env_port;

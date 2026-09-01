@@ -298,7 +298,46 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
 - Tutti i test CTest (`SignatureCorrectness` e `WorkerCorrectness`) passano al 100%.
 
 ### Domande Aperte
-- Nessuna per lo Stadio 11.1. Pronto per la definizione e pianificazione dello Stadio 11.2 (`VERIFY_SIGNATURES_BATCH`).
+- Nessuna per lo Stadio 11.1.
+
+## Fase: M11 (HPC Task+Data Parallelism — Stadio 11.2)
+
+**Data:** 2026-09-01
+
+### Task Completati
+- [x] 1. **Estensione Contratto Protobuf (`proto/pipeline.proto`)**:
+  - Aggiunto il valore `VERIFY_SIGNATURES_BATCH = 2` all'enum `OperationType` senza alterare i valori preesistenti (`OPERATION_UNKNOWN = 0`, `INCREMENT_COUNTER = 1`).
+  - Esteso `TaskRequest` con i campi `batch_size` (uint32 = 4), `num_threads` (int32 = 5), `seed` (uint32 = 6).
+  - Esteso `TaskResult` con i campi `time_seconds` (double = 4), `throughput` (double = 5), `valid_count` (uint32 = 6).
+- [x] 2. **Aggiornamento Benchmark & Generatore (`signature_bench.hpp` / `signature_bench.cpp`)**:
+  - Aggiunto il campo `size_t valid_count` alla struct `BenchResult`.
+  - Popolato `res.valid_count` sia in `SignatureBench::run_sequential` sia in `SignatureBench::run_parallel`.
+- [x] 3. **Implementazione `VERIFY_SIGNATURES_BATCH` nel Worker C++ (`worker_server.cpp`)**:
+  - In `ExecuteTask`, aggiunto il ramo dedicato all'operazione `VERIFY_SIGNATURES_BATCH`:
+    - Generazione deterministica di `batch_size` dispositivi sintetici con `DeviceGenerator::generate_devices(batch_size, seed)`.
+    - Esecuzione multithread tramite `SignatureBench::run_parallel(devices, num_threads, batch_size)`.
+    - Popolamento dei nuovi campi in `TaskResult` (`time_seconds`, `throughput`, `valid_count`, `node_id`, `timestamp`), lasciando intatta l'operazione legacy `INCREMENT_COUNTER` e il codice di errore `UNIMPLEMENTED` per operazioni sconosciute.
+- [x] 4. **Aggiornamento Build System (`hpc-engine/CMakeLists.txt`)**:
+  - Aggiunti `src/onboarding/device_generator.cpp` e `src/onboarding/signature_bench.cpp` ai target `pipeline_worker` e `test_worker`.
+  - Aggiunta `src/onboarding` ai `target_include_directories`.
+  - Collegati `OpenMP::OpenMP_CXX`, `OpenSSL::SSL` e `OpenSSL::Crypto` ai target `pipeline_worker` e `test_worker`.
+- [x] 5. **Test Dedicato di Rigore (`test_worker.cpp`)**:
+  - Aggiunto test per `VERIFY_SIGNATURES_BATCH`: esegue la verifica direttamente tramite `DeviceGenerator` + `SignatureBench::run_parallel` e tramite chiamata RPC `ExecuteTask` su `test-worker` con gli stessi parametri (`batch_size=20`, `seed=42`, `num_threads=2`).
+  - Asserito con successo il match esatto di `valid_count` (20/20), valori positivi di `time_seconds` e `throughput`, e presenza del timestamp.
+  - Tutti i test CTest (`SignatureCorrectness` e `WorkerCorrectness`) passano al 100%.
+- [x] 6. **Isolamento Rigoroso**:
+  - Nessuna modifica a `satellite/`, `chain/`, `gateway/`, `notification/`, `ui/` o stack esterno IoTronic.
+
+### Definition of Done — Stadio 11.2 ✅
+- `proto/pipeline.proto` esteso in modo additivo e retrocompatibile con `VERIFY_SIGNATURES_BATCH`.
+- Worker C++ gestisce l'operazione di benchmark ECDSA OpenMP riusando i moduli M5.
+- `CMakeLists.txt` compila pulito senza errori né warning con `-Wall -Wextra`.
+- Test unitari ed end-to-end gRPC passano al 100% in `WorkerCorrectness` e `SignatureCorrectness`.
+- `PROGRESS.md` aggiornato.
+
+### Domande Aperte
+- Nessuna per lo Stadio 11.2. Pronto per la definizione e pianificazione dello Stadio 11.3 (Benchmark Isolato Task Parallelism puro + scaling a 6-8 worker).
+
 
 
 

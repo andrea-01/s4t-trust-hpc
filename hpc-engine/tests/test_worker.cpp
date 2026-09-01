@@ -8,6 +8,8 @@
 #include <grpcpp/grpcpp.h>
 #include "pipeline.grpc.pb.h"
 #include "worker_server.hpp"
+#include "device_generator.hpp"
+#include "signature_bench.hpp"
 
 // Funzione helper per avviare il server in un thread separato
 void start_test_server(const std::string& address) {
@@ -49,6 +51,38 @@ int main() {
         assert(status.ok() && "ExecuteTask failed");
         assert(response.output_value() == 43 && "Value not incremented correctly");
         assert(response.node_id() == "test-worker" && "Incorrect node id");
+    }
+
+    std::cout << "Testing ExecuteTask (VERIFY_SIGNATURES_BATCH)..." << std::endl;
+    {
+        const uint32_t batch_size = 20;
+        const unsigned int seed = 42;
+        const int num_threads = 2;
+
+        // 1. Esecuzione diretta di riferimento con gli stessi identici parametri
+        auto direct_devices = DeviceGenerator::generate_devices(batch_size, seed);
+        BenchResult direct_res = SignatureBench::run_parallel(direct_devices, num_threads, batch_size);
+        assert(direct_res.valid_count == batch_size && "Direct verification failed to validate all signatures");
+
+        // 2. Esecuzione tramite gRPC worker
+        grpc::ClientContext context;
+        pipeline::TaskRequest request;
+        request.set_operation(pipeline::VERIFY_SIGNATURES_BATCH);
+        request.set_pipeline_id("test-pipeline-hpc");
+        request.set_batch_size(batch_size);
+        request.set_num_threads(num_threads);
+        request.set_seed(seed);
+
+        pipeline::TaskResult response;
+        grpc::Status status = stub->ExecuteTask(&context, request, &response);
+        assert(status.ok() && "ExecuteTask (VERIFY_SIGNATURES_BATCH) failed");
+        assert(response.node_id() == "test-worker" && "Incorrect node id");
+        assert(response.valid_count() == direct_res.valid_count && "valid_count mismatch between direct and gRPC execution");
+        assert(response.valid_count() == batch_size && "Not all signatures were valid in gRPC response");
+        assert(response.time_seconds() > 0.0 && "time_seconds must be positive");
+        assert(response.throughput() > 0.0 && "throughput must be positive");
+        assert(!response.timestamp().empty() && "timestamp should not be empty");
+        (void)direct_res;
     }
     
     std::cout << "Testing ExecuteTask (OPERATION_UNKNOWN)..." << std::endl;

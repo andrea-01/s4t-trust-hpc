@@ -1,4 +1,6 @@
 #include "worker_server.hpp"
+#include "device_generator.hpp"
+#include "signature_bench.hpp"
 #include <iostream>
 #include <chrono>
 
@@ -23,6 +25,33 @@ grpc::Status PipelineWorkerServiceImpl::ExecuteTask(grpc::ServerContext* /*conte
         std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now_c));
         response->set_timestamp(buf);
         
+        return grpc::Status::OK;
+    }
+
+    if (request->operation() == pipeline::VERIFY_SIGNATURES_BATCH) {
+        std::cout << "[" << node_id_ << "] Executing VERIFY_SIGNATURES_BATCH (batch_size=" 
+                  << request->batch_size() << ", threads=" << request->num_threads() 
+                  << ", seed=" << request->seed() << ") for pipeline " 
+                  << request->pipeline_id() << "\n";
+
+        size_t batch_size = request->batch_size();
+        unsigned int seed = request->seed();
+        int num_threads = request->num_threads() > 0 ? request->num_threads() : 1;
+
+        auto devices = DeviceGenerator::generate_devices(batch_size, seed);
+        BenchResult bench_res = SignatureBench::run_parallel(devices, num_threads, batch_size);
+
+        response->set_node_id(node_id_);
+        response->set_time_seconds(bench_res.time_seconds);
+        response->set_throughput(bench_res.throughput);
+        response->set_valid_count(static_cast<uint32_t>(bench_res.valid_count));
+
+        auto now = std::chrono::system_clock::now();
+        std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+        char buf[100];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now_c));
+        response->set_timestamp(buf);
+
         return grpc::Status::OK;
     }
     

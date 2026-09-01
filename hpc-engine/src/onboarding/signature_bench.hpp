@@ -7,6 +7,7 @@ struct BenchResult {
     int num_threads;
     double time_seconds;
     double throughput; // signatures per second
+    size_t valid_count;
 };
 
 class SignatureBench {

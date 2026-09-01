@@ -17,16 +17,23 @@ message Status {
 enum OperationType {
   OPERATION_UNKNOWN = 0;
   INCREMENT_COUNTER = 1;
+  VERIFY_SIGNATURES_BATCH = 2;
 }
 
 message TaskRequest {
   OperationType operation = 1;
   int32 input_value = 2;
   string pipeline_id = 3;
+  uint32 batch_size = 4;
+  int32 num_threads = 5;
+  uint32 seed = 6;
 }
 
 message TaskResult {
   int32 output_value = 1;
   string node_id = 2;
   string timestamp = 3;
+  double time_seconds = 4;
+  double throughput = 5;
+  uint32 valid_count = 6;
 }
