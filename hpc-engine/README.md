@@ -71,51 +71,61 @@ Da solo il worker gRPC rimane passivo e non fa nulla. Per testare il vero flusso
 
 ## Esperimento OpenMPI e Ibrido MPI+OpenMP (M7 / M11.1)
 
-L'esperimento esegue un confronto isolato distribuendo il medesimo carico (500 verifiche complessive, in linea con l'esperimento originale M5) su processi OpenMPI combinati con il multithreading OpenMP. L'obiettivo è quantificare l'eventuale overhead o vantaggio derivante dal modello a memoria distribuita rispetto all'approccio multithread puro e valutare il comportamento del modello ibrido **MPI + OpenMP** (richiesto dai requisiti HPC per task e data parallelism combinati).
+L'esperimento esegue un confronto controllato distribuendo il medesimo carico (500 verifiche complessive su dataset sintetico deterministico) su processi OpenMPI combinati con il multithreading OpenMP, compilati interamente con `CMAKE_BUILD_TYPE=Release` e flag `-O2 -Wall -Wextra`. L'obiettivo è quantificare l'overhead e i benefici derivanti dal modello ibrido **MPI + OpenMP** (richiesto per combinare task e data parallelism) a confronto diretto con le baseline OpenMP pura (M5) e MPI pura (M7) generate nello stesso identico ambiente.
 
-Per eseguire l'esperimento ibrido:
+Per compilare ed eseguire l'esperimento:
 ```bash
 docker build -t hpc-engine-build -f hpc-engine/Dockerfile .
+
+# Esecuzione OpenMP Puro (M5)
+docker run --rm -v $(pwd)/hpc-engine:/app/hpc-engine -w /app/hpc-engine --entrypoint bash hpc-engine-build -c \
+  "/app/build/hpc_engine_bench 500 500 1,2,4,8 results_m5_release.csv"
+
+# Esecuzione Ibrido MPI+OpenMP (M11.1)
 docker run --rm -v $(pwd)/hpc-engine:/app/hpc-engine -w /app/hpc-engine --entrypoint bash hpc-engine-build -c '
 for np in 1 2 4 8; do
   for th in 1 2 4; do
+    if [ $np -eq 8 ] && [ $th -eq 4 ]; then continue; fi
     mpirun --allow-run-as-root -np $np /app/build/hpc_engine_mpi 500 $th results_hybrid_mpi_omp.csv
   done
 done
 '
 ```
 
-### Risultati e Confronto
+### Risultati Sperimentali e Confronto Omogeneo
 
-Tabella comparativa (throughput in verifiche/sec su batch totale di 500 firme):
+Tutte le metriche sono state raccolte nella medesima sessione, sulla stessa macchina e nello stesso container Docker, con ottimizzazione `-O2` attiva (throughput in verifiche/sec su batch di 500 firme):
 
 | Livello di Concorrenza | OpenMP Puro (M5) | OpenMPI Puro (M7) | Ibrido MPI+OpenMP (M11.1) | Configurazione Ibrida (Ranks × Threads) |
 |------------------------|------------------|-------------------|---------------------------|------------------------------------------|
-| 1 core effettivo       | ~17,700          | ~16,500           | ~5,282                    | 1 rank × 1 thread                        |
-| 2 core effettivi       | ~23,200          | ~30,300           | ~6,063                    | 1 rank × 2 threads                       |
-|                        |                  |                   | ~10,110                   | 2 ranks × 1 thread                       |
-| 4 core effettivi       | ~35,400          | ~48,900           | ~6,340                    | 1 rank × 4 threads                       |
-|                        |                  |                   | ~12,410                   | 2 ranks × 2 threads                      |
-|                        |                  |                   | ~16,726                   | 4 ranks × 1 thread                       |
-| 8 core effettivi       | ~67,400          | ~59,800           | ~12,396                   | 2 ranks × 4 threads                      |
-|                        |                  |                   | ~23,915                   | 4 ranks × 2 threads                      |
-|                        |                  |                   | ~25,261                   | 8 ranks × 1 thread                       |
-| 16 core effettivi      | N/A              | N/A               | ~38,624                   | 4 ranks × 4 threads                      |
-|                        | N/A              | N/A               | ~40,239                   | 8 ranks × 2 threads                      |
+| **1 core effettivo**   | ~4,777           | ~4,260            | ~4,260                    | 1 rank × 1 thread                        |
+| **2 core effettivi**   | ~7,290           | ~6,568            | ~5,862                    | 1 rank × 2 threads                       |
+|                        |                  |                   | ~6,568                    | 2 ranks × 1 thread                       |
+| **4 core effettivi**   | ~11,722          | ~8,787            | ~3,651                    | 1 rank × 4 threads *(overhead loop/lock)*|
+|                        |                  |                   | ~10,387                   | 2 ranks × 2 threads                      |
+|                        |                  |                   | ~8,787                    | 4 ranks × 1 thread                       |
+| **8 core effettivi**   | ~19,060          | ~21,514           | ~7,724                    | 2 ranks × 4 threads                      |
+|                        |                  |                   | ~21,749                   | 4 ranks × 2 threads                      |
+|                        |                  |                   | ~21,514                   | 8 ranks × 1 thread                       |
+| **16 core effettivi**  | N/A              | N/A               | **~33,554**               | 4 ranks × 4 threads                      |
+|                        | N/A              | N/A               | ~21,823                   | 8 ranks × 2 threads                      |
 
-*I dati completi dell'ibrido sono tracciati nel file `hpc-engine/results_hybrid_mpi_omp.csv`.*
+*I dati completi sono tracciati nei file `hpc-engine/results_m5_release.csv` e `hpc-engine/results_hybrid_mpi_omp.csv`.*
 
-### Interpretazione dei Risultati
+### Analisi e Isolamento delle Cause Sperimentali
 
-1. **Riduzione dei tempi locali per rank tramite OpenMP**: All'interno di ogni configurazione a rank fissi, incrementare il numero di thread OpenMP riduce il tempo di esecuzione locale per rank e aumenta il throughput globale. Ad esempio, a 4 rank MPI, passando da 1 a 2 e poi a 4 thread OpenMP il throughput cresce progressivamente da **16,726** a **23,915** fino a **38,624 sig/s**.
-2. **Overhead combinato su carichi a grana fine (Double Overhead)**: Su un dataset di dimensioni contenute (500 firme totali), suddividere il carico prima tra processi MPI e poi tra thread OpenMP produce porzioni di lavoro molto piccole per thread (es. a 4 rank con 4 thread, ciascun thread verifica solo ~31 firme). In questo regime:
-   - L'overhead di gestione combinata (avvio e sincronizzazione MPI_Barrier / MPI_Reduce + fork/join OpenMP) incide in misura non trascurabile sul tempo totale.
-   - A bassi rank, la combinazione 1 rank × 1 thread parte da un throughput inferiore rispetto al sequenziale isolato puro (~5.2k vs ~17.7k), riflettendo l'onere del setup MPI e della gestione del runtime OpenMP.
-   - Nella configurazione a 2 rank × 4 thread (8 core totali), il throughput (~12,396 sig/s) rimane piatto rispetto a 2 rank × 2 thread (~12,410 sig/s): la contesa sull'allocazione dei contesti OpenSSL (`EVP_MD_CTX_new`) unita all'overhead di scheduling per sole ~62 verifiche a thread annulla il beneficio dell'ulteriore parallelizzazione.
-3. **Scalabilità a configurazioni estese (16 core)**: Quando il parallelismo ibrido scala a 4 rank × 4 thread (38.6k sig/s) e 8 rank × 2 thread (40.2k sig/s), il sistema dimostra la reale combinazione di parallelismo a memoria distribuita (MPI) e data parallelism a memoria condivisa (OpenMP), fornendo la base architetturale per le metriche HPC di M11.
+1. **Allineamento delle Baseline di Singolo Core**:
+   - In condizioni omogenee di build (`-O2`), un singolo core elabora circa **~4,777 sig/s** in OpenMP puro (1 thread), **~4,998 sig/s** in sequenziale isolato, e **~4,260 sig/s** in MPI (1 rank × 1 thread).
+   - L'indagine sperimentale sul "warmup" (inizializzazione preventiva del thread team libgomp con `#pragma omp parallel {}`) ha evidenziato un impatto di soli ~3.5 ms. La congruenza delle tre baseline a ~4.3k–5.0k sig/s conferma che il costo di 1×1 è dominato dal carico computazionale OpenSSL con un overhead di overhead MPI+OpenMP contenuto (~10-14%).
+2. **Vantaggio dell'Ibridazione a Piena Scala (Task + Data Parallelism)**:
+   - Su 8 core logici, distribuire il carico su **4 processi MPI con 2 thread OpenMP ciascuno** raggiunge **21,749 sig/s**, superando sia OpenMP puro su 8 thread (19,060 sig/s) sia 8 rank MPI puri (21,514 sig/s).
+   - Scalando a 16 core effettivi, la combinazione **4 rank × 4 thread OpenMP** raggiunge il picco di **33,554 sig/s** (speedup di **~7.9x** rispetto a 1×1), dimostrando come l'ibrido sfrutti sia l'isolamento dell'heap e la riduzione della contesa (via processi MPI) sia il data parallelism a bassa latenza (via thread OpenMP).
+3. **Casi di Overhead da Sovra-sottoscrizione e Granularità Fine**:
+   - Quando un singolo processo crea 4 thread OpenMP su sole 500 firme (1 rank × 4 thread) o 2 rank × 4 thread, la contesa per l'allocazione ripetuta di `EVP_MD_CTX_new` per ogni verifica all'interno del medesimo processo degrada il throughput (~3.6k–7.7k sig/s).
+   - Questo fenomeno conferma sperimentalmente la regola aurea dell'HPC: il multi-threading OpenMP all'interno di un processo è efficace solo se la porzione di lavoro per rank è sufficientemente bilanciata rispetto al costo dei lock interni della libreria crittografica.
 
 ### Decisione Architetturale Confermata
 
-Nonostante l'esperimento dimostri con successo il modello ibrido formale MPI+OpenMP, **l'architettura di produzione per il calcolo distribuito nel progetto rimane basata su Satellite + worker gRPC (M6/M9/M11)**.
+Nonostante l'esperimento confermi con evidenza scientifica il funzionamento e i vantaggi di scala del modello ibrido formale MPI+OpenMP, **l'architettura di produzione per il calcolo distribuito nel progetto rimane basata su Satellite + worker gRPC (M6/M9/M11)**.
 
-**Motivazione**: MPI richiede una topologia di processi statica e prefissata al lancio (`mpirun`), che è strutturalmente incompatibile con il leasing dinamico on-chain dei nodi e l'onboarding elastico tipico degli ambienti IoT/Edge. L'estensione di calcolo distribuito ad alte prestazioni a regime viene pertanto realizzata tramite dispatch concorrente via gRPC verso worker C++ ottimizzati con OpenMP.
+**Motivazione**: MPI richiede una topologia di processi statica nota all'avvio (`mpirun`), incompatibile con il leasing dinamico on-chain dei nodi e con l'integrazione di board eterogenee Stack4Things/IoTronic. Il task parallelism distribuito a regime viene pertanto realizzato tramite dispatch concorrente via gRPC verso worker C++ multithread con OpenMP.

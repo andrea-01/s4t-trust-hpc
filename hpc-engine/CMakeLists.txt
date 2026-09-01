@@ -4,8 +4,12 @@ project(hpc-engine)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# Aggiunto -Wall -Wextra esplicitamente come richiesto
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+# Aggiunto -O2 e -Wall -Wextra esplicitamente come richiesto per baseline coerenti
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Wall -Wextra")
 
 # OpenMP
 find_package(OpenMP REQUIRED)

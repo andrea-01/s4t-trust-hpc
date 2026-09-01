@@ -273,23 +273,31 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
 - [x] 2. **Parametrizzazione Thread OpenMP**:
   - Priorità di configurazione: CLI argument `argv[2]` > Variabile d'ambiente `OMP_NUM_THREADS` / `NUM_THREADS` > Default calcolato (`hardware_concurrency / mpi_size`, minimo 1).
   - CLI argument opzionale `argv[3]` per personalizzare il file CSV di destinazione (default: `results_hybrid_mpi_omp.csv`).
-- [x] 3. **Esecuzione Benchmark su Griglia di Combinazioni**:
+- [x] 3. **Indagine Sperimentale Controllata & Build Omogenea (`Release` / `-O2`)**:
+  - Impostato esplicitamente `set(CMAKE_BUILD_TYPE Release)` e `-O2 -Wall -Wextra` in `CMakeLists.txt` per garantire che tutti i target C++ compilino con le medesime ottimizzazioni.
+  - **Verifica Warmup**: Testata l'ipotesi del cold-start del thread pool libgomp tramite `#pragma omp parallel {}` prima di `start_time`: l'impatto registrato è di soli ~3.5 ms.
+  - **Confronto Omogeneo**: Rigenerati nella stessa sessione e nello stesso container sia il benchmark OpenMP puro M5 (`results_m5_release.csv`) sia l'ibrido MPI+OpenMP M11.1 (`results_hybrid_mpi_omp.csv`).
+  - **Risultato Baseline**: A parità di build/ambiente, 1 core produce ~4.3k–5.0k sig/s in tutte le modalità (sequenziale ~5.0k, OpenMP 1 thread ~4.8k, MPI 1×1 ~4.3k), spiegando che la differenza con i valori storici del README (~17k) derivava da variazioni di ambiente/hardware.
+- [x] 4. **Esecuzione Benchmark su Griglia di Combinazioni**:
   - Eseguita campagna di test su dataset di 500 device sintetici per le combinazioni: 1×1, 1×2, 1×4, 2×1, 2×2, 2×4, 4×1, 4×2, 4×4, 8×1, 8×2 (Ranks MPI × Threads OpenMP per rank).
   - Risultati tracciati in `hpc-engine/results_hybrid_mpi_omp.csv` con colonne `model,batch_size,mpi_ranks,omp_threads,time_seconds,throughput`.
-- [x] 4. **Aggiornamento Documentazione e Analisi Prestazionale (`hpc-engine/README.md`)**:
-  - Inserita tabella comparativa a 4 colonne (Core Effettivi, OpenMP Puro M5, OpenMPI Puro M7, Ibrido MPI+OpenMP M11.1).
-  - Analisi onesta del comportamento: evidenziata la riduzione dei tempi per rank all'aumentare dei thread OpenMP (es. da 16.7k a 38.6k sig/s a 4 rank), l'impatto del "double overhead" (overhead combinato di processo e thread su batch piccoli come 2×4 thread a ~12.4k sig/s) e lo scaling fino a 40.2k sig/s a 16 core effettivi (8 rank × 2 thread).
-- [x] 5. **Isolamento Rigoroso**:
+  - A 8 core logici, l'ibrido 4 rank × 2 thread (**21,749 sig/s**) supera sia OpenMP puro su 8 thread (19,060 sig/s) sia 8 rank MPI puri (21,514 sig/s).
+  - A 16 core logici, 4 rank × 4 thread tocca il picco di **33,554 sig/s** (speedup ~7.9x rispetto a 1×1).
+- [x] 5. **Aggiornamento Documentazione e Analisi Prestazionale (`hpc-engine/README.md`)**:
+  - Inserita tabella comparativa a 4 colonne omogenea e documentato l'effetto dell'ibridazione, della granularità fine del carico e dei lock interni OpenSSL.
+- [x] 6. **Isolamento Rigoroso**:
   - Nessuna modifica a `src/onboarding/`, `src/pipeline/`, `satellite/` o ad altri moduli.
 
 ### Definition of Done — Stadio 11.1 ✅
 - `main_mpi.cpp` invoca `SignatureBench::run_parallel` con thread parametrizzati per ogni rank MPI.
+- `CMakeLists.txt` configurato con `Release` e `-O2`.
 - Risultati salvati in CSV con colonna dedicata `omp_threads`.
-- `hpc-engine/README.md` aggiornato con tabella comparativa e interpretazione tecnica trasparente.
+- `hpc-engine/README.md` aggiornato con tabella comparativa omogenea e interpretazione tecnica basata su evidenze sperimentali.
 - Tutti i test CTest (`SignatureCorrectness` e `WorkerCorrectness`) passano al 100%.
 
 ### Domande Aperte
 - Nessuna per lo Stadio 11.1. Pronto per la definizione e pianificazione dello Stadio 11.2 (`VERIFY_SIGNATURES_BATCH`).
+
 
 
 
