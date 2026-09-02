@@ -44,3 +44,5 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+graphs/
+generate_report_graphs.py
