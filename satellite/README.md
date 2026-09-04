@@ -3,11 +3,14 @@
 Questo modulo agisce come orchestratore per il livello di calcolo distribuito (HPC Pipeline). Sviluppato in Python (FastAPI), si occupa di ricevere le richieste di allocazione dei task, coordinare il leasing dei nodi on-chain e orchestrare l'esecuzione remota delegandola alle board IoTronic (Stack4Things) tramite REST, le quali invocano localmente i worker C++ via gRPC.
 
 ## Funzionalità Principali
-- **Gestione Leasing On-Chain**: Coordina l'occupazione e il rilascio dei nodi comunicando con il `gateway` (`POST /leasing/lease`, `POST /leasing/release`) per validare lo stato `Approved` on-chain in modo sicuro, senza maneggiare chiavi private.
-- **Client IoTronic REST (`iotronic_client.py`)**: Interagisce con Keystone (autenticazione token `POST /v3/auth/tokens`) e IoTronic Conductor (`POST /v1/boards/{board}/plugins/{plugin}` con azione `PluginCall`) per inviare i task di calcolo in modo sincrono e sicuro.
+- **Pool di Nodi Dinamico (M12)**: Elimina l'elenco statico di nodi. Ad ogni richiesta di lease (`POST /pipeline/lease`), interroga dinamicamente IoTronic (`GET /v1/boards`) per ottenere l'elenco delle board attualmente `online`.
+- **Selezione con Fallback On-Chain**: Itera sui candidati online tentando il lease on-chain tramite il `gateway` (`POST /leasing/lease`). Se un candidato risulta non approvato on-chain (o già occupato), il satellite passa automaticamente al candidato successivo senza far fallire la richiesta, garantendo tolleranza verso nodi non registrati o non approvati. La richiesta fallisce (HTTP 400 con rollback) solo se i nodi validi disponibili sono inferiori al conteggio richiesto.
+- **Supporto Trasparente a Nuovi Dispositivi**: Qualunque board registrata su IoTronic e marcata `online`, una volta approvata on-chain (es. tramite allowlist o approvazione dinamica), diventa immediatamente leasable ed eseguibile dal satellite senza alcun riavvio o riconfigurazione.
+- **Client IoTronic REST (`iotronic_client.py`)**: Interagisce con Keystone (autenticazione token `POST /v3/auth/tokens`) e IoTronic Conductor (`GET /v1/boards`, `POST /v1/boards/{board}/plugins/{plugin}` con azione `PluginCall`) per gestire la scoperta dei nodi e l'invio dei task di calcolo in modo sincrono e sicuro.
 - **Esecuzione Sequenziale Multi-Nodo (`pipeline_client.py`)**: Coordina l'esecuzione del task in cascata sui nodi leased (l'output del nodo $i$ diventa l'input del nodo $i+1$).
 - **Dispatch Parallelo Task+Data HPC (`pipeline_client.py` - M11.4)**: Partiziona un batch totale di firme crittografiche (ECDSA P-256) con schema di resto deterministico, dispatchando il calcolo in parallelo su tutti i nodi leased contemporaneamente via IoTronic REST / WAMP e aggregando i risultati con validazione stringente di correttezza (100% valid count).
 - **API REST Stateless**: Fornisce un'interfaccia HTTP semplice per richiedere, avviare e rilasciare pipeline di calcolo.
+
 
 ## Prerequisiti
 - Lo stack base (`deploy/docker-compose.yml`) deve essere attivo con Hardhat e Gateway.

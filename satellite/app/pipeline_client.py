@@ -24,11 +24,11 @@ async def run_pipeline_task(pipeline_id: str, nodes: List[str], initial_value: i
     
     for device_id in nodes:
         # device_id matches board_name e.g. "worker-1"
-        worker_addr = f"{device_id}:50051"
         params = {
-            "worker_addr": worker_addr,
             "input_value": current_value
         }
+        if device_id.startswith("worker-"):
+            params["worker_addr"] = f"{device_id}:50051"
         
         result_text = await iotronic_client.call_plugin(
             board_name=device_id,
@@ -79,15 +79,15 @@ async def run_parallel_verification(
     chunks = [base_chunk + (1 if i < remainder else 0) for i in range(num_nodes)]
 
     async def _call_node(i: int, device_id: str, chunk_size: int) -> Dict[str, Any]:
-        worker_addr = f"{device_id}:50051"
         seed = base_seed + i
         params = {
-            "worker_addr": worker_addr,
             "operation": "VERIFY_SIGNATURES_BATCH",
             "batch_size": chunk_size,
             "num_threads": num_threads,
             "seed": seed
         }
+        if device_id.startswith("worker-"):
+            params["worker_addr"] = f"{device_id}:50051"
         t0 = time.perf_counter()
         result_text = await iotronic_client.call_plugin(
             board_name=device_id,

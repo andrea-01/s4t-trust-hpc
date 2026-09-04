@@ -1,7 +1,6 @@
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    worker_nodes: str = "worker-1,worker-2,worker-3"
     gateway_url: str = "http://gateway:8000"
     
     # Keystone Auth Settings

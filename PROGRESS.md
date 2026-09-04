@@ -417,6 +417,59 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
 ### Domande Aperte
 - Nessuna per lo Stadio 11.4. Pronto per la pianificazione dello Stadio 11.5 (Report finale metriche HPC e chiusura milestone).
 
+## Fase: M12 (Pool di Nodi Dinamico)
+
+**Data:** 2026-09-04
+
+### Task Completati
+- [x] 1. **Investigazione Endpoint REST Elenco Board IoTronic**:
+  - Eseguita cattura con evidenza diretta tramite il comando `iotronic --debug board-list` sul container `iotronic-ui`.
+  - Confermato l'endpoint REST `GET /v1/boards`, versione API negoziata `1.0` (la versione 1.9 produce HTTP 406), header di autenticazione `X-Auth-Token` (Keystone token scoped) e `Accept: application/json`.
+  - Identificato il campo esatto che indica lo stato online: `status == "online"`, e il campo identificativo: `name` (corrispondente al `device_id` blockchain).
+  - Documentati dettagli ed evidenze sperimentali in `s4t-plugin/IOTRONIC_NOTES.md`.
+- [x] 2. **Metodo `list_online_boards()` in `satellite/app/iotronic_client.py`**:
+  - Implementato metodo asincrono che interroga `GET {self.iotronic_url}/v1/boards`, gestisce la scadenza del token Keystone con refresh automatico e retry singolo, e restituisce la lista dei `name` delle sole board con `status == "online"`.
+- [x] 3. **Selezione Nodi Dinamica e Fallback in `satellite/app/node_registry.py`**:
+  - Sostituito il caricamento statico da JSON con la chiamata dinamica a `list_online_boards()`.
+  - Implementata la selezione resiliente con fallback: ad ogni iterazione tenta il lease on-chain tramite `gateway_leasing_client`; se un candidato risulta non approvato (HTTP 403 / 404 dal Gateway) o già occupato, passa automaticamente al candidato successivo senza interrompere la richiesta.
+  - Se non si raggiunge il conteggio richiesto esaurendo i candidati, esegue il rollback rilasciando tutti i nodi parzialmente allocati e solleva `HTTPException(400)`.
+- [x] 4. **Adattamento `pipeline_client.py`**:
+  - Parametrizzato `worker_addr`: impostato a `{device_id}:50051` solo per i worker dedicati (`worker-`), consentendo a board dinamiche o di test come `test_board` di utilizzare il target worker di default configurato nel plugin.
+- [x] 5. **Verifica Preliminare dello Stato On-Chain**:
+  - Verificato preventivamente lo stato on-chain di `test_board` tramite `GET /leasing/status/test_board`: confermato genuinamente non registrato / non approvato all'avvio.
+- [x] 6. **Test Reale del Meccanismo di Fallback**:
+  - Con 4 board online su IoTronic (`test_board`, `worker-1`, `worker-2`, `worker-3`) e solo 3 approvate on-chain:
+  - Richiesta di lease con `count=3`: il Satellite valuta prima `test_board` (non approvato, lease rifiutato), salta al candidato successivo, alloca con successo `worker-1`, `worker-2`, `worker-3` e completa la pipeline con successo (42 -> 43 -> 44 -> 45).
+  - Richiesta di lease con `count=4`: fallisce regolarmente con HTTP 400 (`insufficient approved/available nodes`) e rollback automatico, dimostrando la correttezza del vincolo di capacità.
+- [x] 7. **Approvazione a Caldo e Verifica End-to-End su Device Dinamico (`test_board`)**:
+  - Aggiunto lo stack fidato via Gateway autenticato: `POST /trust/stacks` con `{"stackId": "test_board_stack", "deviceIdPrefixes": ["test_board"]}`.
+  - Sottomessa richiesta di onboarding per `test_board` via `POST /onboarding-request`, auto-approvata istantaneamente dal servizio `owner-auto-approver`.
+  - Dimostrato il lease di tutti e 4 i nodi (`count=4`) tramite il Satellite senza alcuna modifica a codice o config del Satellite.
+  - Esecuzione sequenziale su 4 nodi completata con successo: 42 -> 43 -> 44 -> 45 -> 46, con primo step eseguito realmente su `test_board`.
+  - Esecuzione parallela su 4 nodi (100 firme, chunk da 25 per nodo) completata con successo al 100% (100/100 firme verificate in 0.55s).
+- [x] 8. **Pulizia e Rimozione File Statico**:
+  - Eliminato definitivamente `satellite/app/node_directory.json` e rimosso il parametro deprecato `worker_nodes` da `config.py`. Verificata l'assenza di riferimenti residui nel codice.
+- [x] 9. **Suite di Test di Integrazione**:
+  - Aggiornato ed esteso `satellite/tests/test_integration.py` (7 test totali, inclusi test sequenziale, concorrente su 4 nodi, validazione errori, formato inatteso, parallel batch verification, e2e su 4 nodi dinamici e fallback su candidato unapproved).
+  - Tutti i 7 test passano al 100% all'interno dell'ambiente reale containerizzato.
+- [x] 10. **Aggiornamento Documentazione**:
+  - `satellite/README.md` aggiornato con la descrizione del pool dinamico e della selezione con fallback.
+
+### Conseguenza Attesa di Progetto
+Con l'introduzione della scoperta dinamica dei nodi, qualunque board registrata su IoTronic e marcata `online` che risulti approvata on-chain entra automaticamente nel pool di nodi leasable ed eseguibili dal Satellite. Eventuali board di test lasciate attive e approvate (come `test_board`) partecipano quindi di diritto all'allocazione e all'esecuzione HPC distribuita.
+
+### Definition of Done — M12 ✅
+- Endpoint IoTronic di elenco board verificato con evidenza reale (`GET /v1/boards`, API v1.0, `status: "online"`).
+- `node_directory.json` rimosso, nessun riferimento residuo nel codice.
+- Un device diverso da `worker-1/2/3` (`test_board`) è leasable ed eseguibile tramite il Satellite, dimostrato con test reali e2e sequenziali e paralleli.
+- Selezione con fallback verificata sperimentalmente (un candidato non approvato viene saltato senza far fallire la richiesta se vi sono abbastanza nodi validi).
+- Nessuna modifica a `chain/`, `gateway/`, `hpc-engine/`, `ui/`, `notification/`, né a `deploy/docker-compose.pipeline.yml`.
+- `PROGRESS.md` e `satellite/README.md` aggiornati.
+
+### Domande Aperte
+- Nessuna per lo Stadio M12.
+
+
 
 
 

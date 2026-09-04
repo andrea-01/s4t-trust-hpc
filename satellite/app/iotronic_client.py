@@ -1,7 +1,7 @@
 import httpx
 import logging
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
@@ -114,3 +114,46 @@ class IotronicClient:
             return str(data)
         except Exception:
             return resp.text
+
+    async def list_online_boards(self) -> List[str]:
+        token = await self.get_token()
+        url = f"{self.iotronic_url}/v1/boards"
+
+        async def _send_request(t: str) -> httpx.Response:
+            headers = {
+                "X-Auth-Token": t,
+                "X-OpenStack-Iotronic-API-Version": "1.0",
+                "Accept": "application/json"
+            }
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                return await client.get(url, headers=headers)
+
+        try:
+            resp = await _send_request(token)
+        except httpx.TimeoutException:
+            raise Exception("Timeout retrieving board list from IoTronic conductor.")
+        except httpx.RequestError as exc:
+            raise Exception(f"Connection error to IoTronic conductor: {exc}")
+
+        # Token expired -> retry once
+        if resp.status_code == 401:
+            token = await self.get_token(force_refresh=True)
+            try:
+                resp = await _send_request(token)
+            except httpx.TimeoutException:
+                raise Exception("Timeout retrieving board list from IoTronic conductor after token refresh.")
+            except httpx.RequestError as exc:
+                raise Exception(f"Connection error to IoTronic conductor after token refresh: {exc}")
+
+        if resp.status_code != 200:
+            raise Exception(f"IoTronic board list failed (status {resp.status_code}): {resp.text}")
+
+        data = resp.json()
+        boards = data.get("boards", [])
+        online_boards = [
+            board["name"]
+            for board in boards
+            if board.get("status") == "online" and board.get("name")
+        ]
+        return online_boards
+

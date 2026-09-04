@@ -113,4 +113,57 @@ Verificato sperimentalmente tramite CLI `iotronic` e ispezione dei comandi (`plu
   3. Registrare il nuovo bundle compilato: `iotronic plugin-create --callable <plugin_name> <path_bundle.py>`
   4. Re-iniettare il plugin aggiornato sulle board: `iotronic plugin-inject <board> <plugin_name>`
 
+## Stadio M12: Investigazione Endpoint REST Elenco Board
+
+In data 2026-09-04 è stata condotta l'indagine sperimentale richiesta per determinare con evidenza diretta l'endpoint REST effettivo utilizzato dall'operazione `board-list` di IoTronic.
+
+### 1. Evidenza Sperimentale (Cattura CLI `--debug`)
+Esecuzione del comando `iotronic --debug board-list` tramite il container `iotronic-ui`:
+```
+DEBUG (session:372) REQ: curl -g -i -X GET http://iotronic-conductor:8812/v1/boards -H "X-OpenStack-Iotronic-API-Version: 1.9" ...
+DEBUG (connectionpool:395) "GET /v1/boards HTTP/1.1" 406 215
+RESP BODY: {"error_message": "{\"code\": 406, \"title\": \"Not Acceptable\", \"description\": \"Version 1.9 was requested but the minor version is not supported by this service. The supported version range is: [1.0, 1.0].\"}"}
+
+DEBUG (http:148) Negotiated API version is 1.0
+DEBUG (session:372) REQ: curl -g -i -X GET http://iotronic-conductor:8812/v1/boards -H "X-OpenStack-Iotronic-API-Version: 1.0" -H "X-Auth-Token: {SHA1}b358b5a4f8f1e0e7d6dc79ec1f7dec6b1bc96d2a" -H "Content-Type: application/json" -H "Accept: application/json" -H "User-Agent: python-iotronicclient"
+DEBUG (connectionpool:395) "GET /v1/boards HTTP/1.1" 200 2584
+```
+
+### 2. Dettaglio Specifiche Endpoint REST
+- **Verbo HTTP**: `GET`
+- **URL**: `{iotronic_url}/v1/boards` (es. `http://iotronic-conductor:8812/v1/boards`)
+- **Headers di Autenticazione e Negoziazione**:
+  - `X-Auth-Token`: Token Keystone scoped (`X-Subject-Token`).
+  - `X-OpenStack-Iotronic-API-Version`: `1.0` (la versione 1.9 produce HTTP 406; il conductor supporta esclusivamente `1.0`).
+  - `Accept`: `application/json`
+- **Struttura Risposta JSON**:
+  Un oggetto JSON contenente la chiave di primo livello `"boards"`, che è un array di dizionari descriventi ciascuna board:
+  ```json
+  {
+    "boards": [
+      {
+        "uuid": "24635118-44d8-4f57-a43e-32d2f9bac94e",
+        "name": "test_board",
+        "status": "online",
+        "type": "gateway",
+        "agent": "wagent-1",
+        "lr_version": "0.4.17",
+        ...
+      },
+      {
+        "uuid": "ad0d81f2-b8f1-4aa0-a0f0-d2c711c6e031",
+        "name": "worker-1",
+        "status": "online",
+        ...
+      }
+    ]
+  }
+  ```
+- **Nome esatto del campo che indica lo stato online**:
+  - Campo: `status`
+  - Valore per board attiva/connessa: `"online"` (es. `board.get("status") == "online"`).
+- **Nome esatto del campo identificativo**:
+  - Campo: `name` (es. `"worker-1"`, `"test_board"`, che corrisponde esattamente al `device_id` atteso dal satellite e dalla blockchain).
+
+
 

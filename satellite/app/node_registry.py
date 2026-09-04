@@ -2,50 +2,61 @@ import asyncio
 import uuid
 import json
 import os
-from typing import List, Dict
+from typing import List, Dict, Optional
 from fastapi import HTTPException
 from config import settings
 from gateway_leasing_client import GatewayLeasingClient
+from iotronic_client import IotronicClient
 
 class NodeRegistry:
-    def __init__(self):
-        # Load directory
-        directory_path = os.path.join(os.path.dirname(__file__), "node_directory.json")
-        try:
-            with open(directory_path, "r") as f:
-                self.directory: Dict[str, dict] = json.load(f)
-        except Exception:
-            self.directory = {}
+    def __init__(
+        self,
+        iotronic_client: Optional[IotronicClient] = None,
+        leasing_client: Optional[GatewayLeasingClient] = None
+    ):
+        if iotronic_client is None:
+            from pipeline_client import iotronic_client as default_iotronic_client
+            self.iotronic_client = default_iotronic_client
+        else:
+            self.iotronic_client = iotronic_client
             
-        self.leasing_client = GatewayLeasingClient(settings.gateway_url)
+        self.leasing_client = leasing_client or GatewayLeasingClient(settings.gateway_url)
         # Mapping from pipeline_id to list of leased device_ids
         self.pipelines: Dict[str, List[str]] = {}
         self.lock = asyncio.Lock()
 
     async def lease_nodes(self, count: int) -> str:
-        if count > len(self.directory):
-            raise HTTPException(status_code=400, detail=f"Not enough nodes in directory. Requested {count}.")
+        online_candidates = await self.iotronic_client.list_online_boards()
+        if count > len(online_candidates):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not enough online nodes in IoTronic. Requested {count}, found {len(online_candidates)} online."
+            )
 
         allocated = []
-        for device_id in self.directory.keys():
+        for device_id in online_candidates:
             if len(allocated) == count:
                 break
             
-            # Try to lease via gateway
+            # Try to lease via gateway (checks Approved state and Availability)
             success = await self.leasing_client.lease_node(device_id)
             if success:
                 allocated.append(device_id)
 
         if len(allocated) < count:
-            # Rollback
+            # Rollback partially allocated nodes
             for device_id in allocated:
                 await self.leasing_client.release_node(device_id)
-            raise HTTPException(status_code=400, detail=f"Failed to lease {count} nodes via Gateway.")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to lease {count} nodes via Gateway (insufficient approved/available nodes)."
+            )
             
         async with self.lock:
             pipeline_id = str(uuid.uuid4())
             self.pipelines[pipeline_id] = allocated
             return pipeline_id
+
 
     async def release_nodes(self, pipeline_id: str):
         async with self.lock:
