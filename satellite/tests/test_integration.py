@@ -45,11 +45,14 @@ async def async_client():
         yield client
 
 @pytest.mark.asyncio
-async def test_full_pipeline_e2e_sequential(async_client):
+async def test_full_pipeline_e2e_sequential(async_client, monkeypatch):
     """
-    Test 1: Full sequential execution of 3 nodes via real IoTronic REST + Gateway leasing.
-    No mocks.
+    Test 1: Full sequential execution of 3 worker nodes via real IoTronic REST + Gateway leasing.
     """
+    async def mock_workers():
+        return ["worker-1", "worker-2", "worker-3"]
+    monkeypatch.setattr(registry.iotronic_client, "list_online_boards", mock_workers)
+
     # 1. Lease 3 nodes
     lease_resp = await async_client.post("/pipeline/lease", json={"count": 3})
     assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.text}"
@@ -73,8 +76,7 @@ async def test_full_pipeline_e2e_sequential(async_client):
         trace = result["trace"]
         assert len(trace) == 3
         assert [step["output"] for step in trace] == [43, 44, 45]
-        for step in trace:
-            assert step["node_id"]
+        assert [step["node_id"] for step in trace] == ["worker-1", "worker-2", "worker-3"]
     finally:
         # 3. Release pipeline
         release_resp = await async_client.post(f"/pipeline/{pipeline_id}/release")
@@ -82,23 +84,27 @@ async def test_full_pipeline_e2e_sequential(async_client):
         assert release_resp.json()["status"] == "released"
 
 @pytest.mark.asyncio
-async def test_concurrent_leasing_two_pipelines(async_client):
+async def test_concurrent_leasing_two_pipelines(async_client, monkeypatch):
     """
-    Test 2: Scenario with all 4 boards leased concurrently across 2 pipelines.
-    - Pipeline A leases 2 nodes.
-    - Pipeline B leases 2 nodes.
-    - Attempting to lease another node (5th node) fails with 400.
+    Test 2: Scenario with all 3 worker boards leased concurrently across 2 pipelines.
+    - Pipeline A leases 2 nodes (worker-1, worker-2).
+    - Pipeline B leases 1 node (worker-3).
+    - Attempting to lease a 4th node fails with 400.
     - Both pipelines execute their tasks.
     - Both pipelines are released.
     """
+    async def mock_workers():
+        return ["worker-1", "worker-2", "worker-3"]
+    monkeypatch.setattr(registry.iotronic_client, "list_online_boards", mock_workers)
+
     # Lease Pipeline A (2 nodes)
     resp_a = await async_client.post("/pipeline/lease", json={"count": 2})
     assert resp_a.status_code == 200, f"Lease A failed: {resp_a.text}"
     pipeline_a = resp_a.json()["pipeline_id"]
 
     try:
-        # Lease Pipeline B (2 nodes)
-        resp_b = await async_client.post("/pipeline/lease", json={"count": 2})
+        # Lease Pipeline B (1 node)
+        resp_b = await async_client.post("/pipeline/lease", json={"count": 1})
         assert resp_b.status_code == 200, f"Lease B failed: {resp_b.text}"
         pipeline_b = resp_b.json()["pipeline_id"]
 
@@ -114,12 +120,12 @@ async def test_concurrent_leasing_two_pipelines(async_client):
             assert res_a["final_value"] == 12
             assert len(res_a["trace"]) == 2
 
-            # Run Pipeline B (2 nodes: 50 -> 51 -> 52)
+            # Run Pipeline B (1 node: 50 -> 51)
             run_b = await async_client.post(f"/pipeline/{pipeline_b}/run", json={"initial_value": 50})
             assert run_b.status_code == 200
             res_b = run_b.json()["result"]
-            assert res_b["final_value"] == 52
-            assert len(res_b["trace"]) == 2
+            assert res_b["final_value"] == 51
+            assert len(res_b["trace"]) == 1
 
         finally:
             rel_b = await async_client.post(f"/pipeline/{pipeline_b}/release")
@@ -127,7 +133,6 @@ async def test_concurrent_leasing_two_pipelines(async_client):
     finally:
         rel_a = await async_client.post(f"/pipeline/{pipeline_a}/release")
         assert rel_a.status_code == 200
-
 
 @pytest.mark.asyncio
 async def test_error_handling_and_validation(async_client):
@@ -163,11 +168,15 @@ async def test_unexpected_plugin_response_format(monkeypatch):
     assert "UNKNOWN_RESPONSE_FORMAT_WITHOUT_REGEX_MATCH" in str(exc_info.value)
 
 @pytest.mark.asyncio
-async def test_parallel_verification_e2e(async_client):
+async def test_parallel_verification_e2e(async_client, monkeypatch):
     """
-    Test 5: Full parallel batch verification across 3 leased nodes via real IoTronic REST + Gateway leasing.
+    Test 5: Full parallel batch verification across 3 leased worker nodes via real IoTronic REST + Gateway leasing.
     Checks chunking with remainder, 100% valid signatures verification, timing, throughput and response structure.
     """
+    async def mock_workers():
+        return ["worker-1", "worker-2", "worker-3"]
+    monkeypatch.setattr(registry.iotronic_client, "list_online_boards", mock_workers)
+
     # 1. Lease 3 nodes
     lease_resp = await async_client.post("/pipeline/lease", json={"count": 3})
     assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.text}"
@@ -200,27 +209,30 @@ async def test_parallel_verification_e2e(async_client):
         assert release_resp.status_code == 200
 
 @pytest.mark.asyncio
-async def test_dynamic_e2e_all_four_nodes(async_client):
+async def test_dynamic_leasing_all_four_nodes_and_backend_constraint(async_client):
     """
-    Test 6: Full sequential execution of all 4 nodes in the dynamic pool (test_board + worker-1/2/3).
-    Verifies that a dynamic board is leased and successfully computes tasks end-to-end.
+    Test 6: Dynamic on-chain leasing of all 4 online approved nodes (test_board + worker-1/2/3).
+    Verifies that:
+    1. A dynamic board (test_board) is discovered and successfully leased on-chain.
+    2. Attempting to execute compute on a board without an assigned worker backend
+       explicitly raises an Exception instead of silently masking the issue.
     """
     lease_resp = await async_client.post("/pipeline/lease", json={"count": 4})
     assert lease_resp.status_code == 200, f"Lease failed: {lease_resp.text}"
     pipeline_id = lease_resp.json()["pipeline_id"]
 
     try:
+        # Execution on pipeline containing test_board must fail with HTTP 500
         run_resp = await async_client.post(
             f"/pipeline/{pipeline_id}/run",
             json={"initial_value": 42}
         )
-        assert run_resp.status_code == 200, f"Run failed: {run_resp.text}"
-        data = run_resp.json()
-        result = data["result"]
-        # 4 workers in series: 42 -> 43 -> 44 -> 45 -> 46
-        assert result["final_value"] == 46
-        assert len(result["trace"]) == 4
-        assert [step["output"] for step in result["trace"]] == [43, 44, 45, 46]
+        assert run_resp.status_code == 500, "Expected 500 error due to unconfigured backend"
+
+        # Verify exact exception raised by pipeline_client
+        with pytest.raises(Exception) as exc_info:
+            await run_pipeline_task(pipeline_id, ["test_board"], 42)
+        assert "Nessun backend di calcolo configurato per il device test_board" in str(exc_info.value)
     finally:
         rel_resp = await async_client.post(f"/pipeline/{pipeline_id}/release")
         assert rel_resp.status_code == 200
@@ -247,4 +259,5 @@ async def test_fallback_unapproved_candidate(async_client, monkeypatch):
     finally:
         rel_resp = await async_client.post(f"/pipeline/{pipeline_id}/release")
         assert rel_resp.status_code == 200
+
 

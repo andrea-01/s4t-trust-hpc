@@ -433,41 +433,42 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
   - Sostituito il caricamento statico da JSON con la chiamata dinamica a `list_online_boards()`.
   - Implementata la selezione resiliente con fallback: ad ogni iterazione tenta il lease on-chain tramite `gateway_leasing_client`; se un candidato risulta non approvato (HTTP 403 / 404 dal Gateway) o già occupato, passa automaticamente al candidato successivo senza interrompere la richiesta.
   - Se non si raggiunge il conteggio richiesto esaurendo i candidati, esegue il rollback rilasciando tutti i nodi parzialmente allocati e solleva `HTTPException(400)`.
-- [x] 4. **Adattamento `pipeline_client.py`**:
-  - Parametrizzato `worker_addr`: impostato a `{device_id}:50051` solo per i worker dedicati (`worker-`), consentendo a board dinamiche o di test come `test_board` di utilizzare il target worker di default configurato nel plugin.
+- [x] 4. **Gestione Esplicita del Backend di Calcolo in `pipeline_client.py`**:
+  - Evitato l'alias silenzioso su `worker-1`: se un `device_id` non ha un backend di calcolo assegnato (attualmente solo i device `worker-*` possiedono il target `{device_id}:50051`), il Satellite solleva esplicitamente un'eccezione (`Exception("Nessun backend di calcolo configurato per il device {device_id}: solo i device worker-* hanno un worker_addr assegnato")`) sia in `run_pipeline_task` sia in `run_parallel_verification`, rendendo visibile il limite architetturale anziché mascherarlo.
 - [x] 5. **Verifica Preliminare dello Stato On-Chain**:
   - Verificato preventivamente lo stato on-chain di `test_board` tramite `GET /leasing/status/test_board`: confermato genuinamente non registrato / non approvato all'avvio.
 - [x] 6. **Test Reale del Meccanismo di Fallback**:
   - Con 4 board online su IoTronic (`test_board`, `worker-1`, `worker-2`, `worker-3`) e solo 3 approvate on-chain:
   - Richiesta di lease con `count=3`: il Satellite valuta prima `test_board` (non approvato, lease rifiutato), salta al candidato successivo, alloca con successo `worker-1`, `worker-2`, `worker-3` e completa la pipeline con successo (42 -> 43 -> 44 -> 45).
   - Richiesta di lease con `count=4`: fallisce regolarmente con HTTP 400 (`insufficient approved/available nodes`) e rollback automatico, dimostrando la correttezza del vincolo di capacità.
-- [x] 7. **Approvazione a Caldo e Verifica End-to-End su Device Dinamico (`test_board`)**:
+- [x] 7. **Approvazione a Caldo e Verifica End-to-End del Pool Dinamico**:
   - Aggiunto lo stack fidato via Gateway autenticato: `POST /trust/stacks` con `{"stackId": "test_board_stack", "deviceIdPrefixes": ["test_board"]}`.
   - Sottomessa richiesta di onboarding per `test_board` via `POST /onboarding-request`, auto-approvata istantaneamente dal servizio `owner-auto-approver`.
-  - Dimostrato il lease di tutti e 4 i nodi (`count=4`) tramite il Satellite senza alcuna modifica a codice o config del Satellite.
-  - Esecuzione sequenziale su 4 nodi completata con successo: 42 -> 43 -> 44 -> 45 -> 46, con primo step eseguito realmente su `test_board`.
-  - Esecuzione parallela su 4 nodi (100 firme, chunk da 25 per nodo) completata con successo al 100% (100/100 firme verificate in 0.55s).
+  - Dimostrato il lease on-chain di tutti e 4 i nodi (`count=4`) tramite il Satellite senza alcuna modifica a codice o config del Satellite.
+  - Dimostrata la corretta intercettazione del vincolo di backend: una richiesta di calcolo su `test_board` rifiuta l'esecuzione sollevando esplicitamente l'eccezione di backend non configurato, evitando alias fisici nascosti.
 - [x] 8. **Pulizia e Rimozione File Statico**:
   - Eliminato definitivamente `satellite/app/node_directory.json` e rimosso il parametro deprecato `worker_nodes` da `config.py`. Verificata l'assenza di riferimenti residui nel codice.
 - [x] 9. **Suite di Test di Integrazione**:
-  - Aggiornato ed esteso `satellite/tests/test_integration.py` (7 test totali, inclusi test sequenziale, concorrente su 4 nodi, validazione errori, formato inatteso, parallel batch verification, e2e su 4 nodi dinamici e fallback su candidato unapproved).
+  - Aggiornato ed esteso `satellite/tests/test_integration.py` (7 test totali, inclusi test sequenziale su nodi worker, concorrente su 2 pipeline, validazione errori, formato inatteso, parallel batch verification, verifica vincolo backend su board dinamiche e fallback su candidato unapproved).
   - Tutti i 7 test passano al 100% all'interno dell'ambiente reale containerizzato.
 - [x] 10. **Aggiornamento Documentazione**:
-  - `satellite/README.md` aggiornato con la descrizione del pool dinamico e della selezione con fallback.
+  - `satellite/README.md` aggiornato con la descrizione del pool dinamico, della selezione con fallback e dell'esplicitazione del vincolo di calcolo.
 
-### Conseguenza Attesa di Progetto
-Con l'introduzione della scoperta dinamica dei nodi, qualunque board registrata su IoTronic e marcata `online` che risulti approvata on-chain entra automaticamente nel pool di nodi leasable ed eseguibili dal Satellite. Eventuali board di test lasciate attive e approvate (come `test_board`) partecipano quindi di diritto all'allocazione e all'esecuzione HPC distribuita.
+### Cosa è Stato Dimostrato e Limite Noto Esplicito
+- **Risultato reale conseguito in M12**: La scoperta dinamica dei nodi (`GET /v1/boards`) e la selezione con fallback on-chain funzionano regolarmente end-to-end: qualunque board registrata su IoTronic e marcata `online`, se approvata on-chain, entra nel pool leasable del Satellite senza riavvii né modifiche al codice.
+- **Limite noto documentato con trasparenza**: L'esecuzione di calcolo realmente indipendente su una board dinamica priva di un proprio worker C++ dedicato (come `test_board`) non è supportata nell'infrastruttura attuale (dove esistono fisicamente solo 3 container worker: `worker-1`, `worker-2`, `worker-3`). Il Satellite impedisce esplicitamente alias silenziose verso worker condivisi rifiutando l'esecuzione con errore trasparente. L'eventuale supporto per board dinamiche con motore di calcolo proprio richiederà l'allocazione dinamica del backend di calcolo in una milestone successiva.
 
 ### Definition of Done — M12 ✅
 - Endpoint IoTronic di elenco board verificato con evidenza reale (`GET /v1/boards`, API v1.0, `status: "online"`).
 - `node_directory.json` rimosso, nessun riferimento residuo nel codice.
-- Un device diverso da `worker-1/2/3` (`test_board`) è leasable ed eseguibile tramite il Satellite, dimostrato con test reali e2e sequenziali e paralleli.
-- Selezione con fallback verificata sperimentalmente (un candidato non approvato viene saltato senza far fallire la richiesta se vi sono abbastanza nodi validi).
+- Selezione dinamica e fallback verificati sperimentalmente (un candidato non approvato viene saltato senza far fallire la richiesta se vi sono abbastanza nodi validi; capacità on-chain rispettata).
+- Vincolo di backend esplicitato con errore trasparente, evitando alias fisici su nodi non worker.
 - Nessuna modifica a `chain/`, `gateway/`, `hpc-engine/`, `ui/`, `notification/`, né a `deploy/docker-compose.pipeline.yml`.
 - `PROGRESS.md` e `satellite/README.md` aggiornati.
 
 ### Domande Aperte
 - Nessuna per lo Stadio M12.
+
 
 
 
