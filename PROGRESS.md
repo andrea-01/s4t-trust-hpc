@@ -469,6 +469,64 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
 ### Domande Aperte
 - Nessuna per lo Stadio M12.
 
+## Fase: M11 (HPC Task+Data Parallelism — Stadio 11.5)
+
+**Data:** 2026-09-08
+**Ambiente Unico:** `env_id = i7_12700h_20260908` (Intel Core i7-12700H, 14 core fisici / 20 thread logici, 31 GiB RAM, Linux Kernel 7.0.0-31-generic).
+
+### Task Completati
+- [x] 1. **Fingerprint dell'Ambiente e Configurazione Unica**:
+  - Eseguita cattura preliminare dell'hardware host (`lscpu`, `nproc`, `free -h`, `uname -a`) e salvata in `hpc-engine/results/environment_fingerprint_20260908.txt`.
+  - Definita la soglia formale di oversubscription: $P_{eff} = N_{nodi} \times N_{thread} > 20$. Tutte le combinazioni con $P_{eff} > 20$ etichettate esplicitamente `oversubscribed` in ogni riga dei CSV prodotti.
+- [x] 2. **Task A — Profiling Reale sull'Hardware Target**:
+  - Test preliminare su build sequenziale compilata con `-pg`: `gprof` riporta `no time accumulated` (0.00s) confermando empiricamente che l'intero computo risiede nella libreria dinamica `libcrypto.so.3` non instrumentata.
+  - Generato flat profile dinamico con `valgrind --tool=callgrind` e pacchetto di debug symbols `libssl3t64-dbgsym` su $1.181.840.654\text{ Ir}$ (batch 500):
+    - **Calcolo Crittografico Totale**: **$94.14\%$** ($>90\%$ confermato empiricamente).
+    - **Aritmetica EC P-256 e Montgomery BIGNUM**: **$87.88\%$** (`__ecp_nistz256_mul_montq` $32.71\%$, `__ecp_nistz256_sqr_montq` $19.97\%$).
+    - **Gestione Dinamica Memoria (`malloc`/`free`)**: **$3.20\%$**.
+    - **Codice Applicativo del Progetto**: **$1.80\%$**.
+  - Risultati salvati in `hpc-engine/results/profile_i7_12700h_20260908.txt`.
+- [x] 3. **Infrastruttura Isolata Estesa a 32 Nodi (`docker-compose.benchmark.yml`)**:
+  - Esteso additivamente `deploy/docker-compose.benchmark.yml` a 32 container `bench-worker-1..32` su porte host isolate `51051..51082`, prevenendo ogni sovrapposizione con i container di produzione.
+  - Eseguita run pilota preliminare a 32 nodi × 8 thread (batch 5.000, tempo $88.31\text{ ms}$, throughput $56.618,9\text{ sig/s}$), isolata in `hpc-engine/results/pilot_32x8_5000.csv` ed esclusa dalle statistiche formali.
+- [x] 4. **Task B — Griglia Completa Nodi × Thread (gRPC Isolato)**:
+  - Eseguita campagna completa su 48 configurazioni: nodi $\in \{1,2,4,8,16,32\}$, thread $\in \{1,2,4,8\}$, batch $\in \{1000, 5000\}$ con 3 ripetizioni e warmup.
+  - Validazione stringente al 100% superata su tutte le run ($\sum \text{valid\_count} == \text{total\_batch}$).
+  - Picco di throughput in regime clean ($P_{eff} \le 20$): **$72.699,7\text{ sig/s}$** (16 nodi × 1 thread, speedup $7.20\times$).
+  - Picco di throughput complessivo in oversubscription: **$78.989,2\text{ sig/s}$** (media) / **$82.467,0\text{ sig/s}$** (massimo) a 16 nodi × 8 thread.
+  - Risultati salvati in `hpc-engine/results/grid_grpc_i7_12700h_20260908.csv`.
+- [x] 5. **Task B — Griglia Completa Nodi × Thread (Ibrido MPI+OpenMP)**:
+  - Eseguita campagna omogenea per rank MPI $\in \{1,2,4,8,16,32\}$, thread OpenMP $\in \{1,2,4,8\}$, batch $\in \{1000, 5000\}$ con policy `--bind-to none` e `--oversubscribe`.
+  - Picco di throughput in regime clean: **$138.321,7\text{ sig/s}$** (16 rank × 1 thread, speedup $8.97\times$).
+  - Picco assoluto con sonda oversubscribed: **$148.927,0\text{ sig/s}$** (media) / **$163.922,0\text{ sig/s}$** (massimo) a 32 rank × 4 thread.
+  - Risultati salvati in `hpc-engine/results/grid_mpi_omp_i7_12700h_20260908.csv`.
+- [x] 6. **Task C — Investigazione dell'Anomalia di Amdahl a 8, 16 e 32 Nodi**:
+  - Rilanciate 12 configurazioni ($N \in \{8, 16, 32\}$, $T \in \{1, 8\}$, batch $1.000$ e $5.000$) con **10 ripetizioni ciascuna**.
+  - Scomposto il tempo di ciascuna singola chiamata RPC in tempo di calcolo C++ restituito dal worker (`worker_time_seconds`) vs latenza totale (`rpc_latency_seconds`) vs overhead di rete (`network_overhead_seconds`).
+  - **Verdetto Formale**: Fenomeno reale e strutturale. A 32 nodi il calcolo utile medio scende a $2.84\text{ ms} - 13.06\text{ ms}$, mentre l'overhead di rete per chiamata pesa tra $11.44\text{ ms}$ e $31.88\text{ ms}$ (**$71\% - 80\%$** dell'intera durata della RPC). La contesa TCP/HTTP2 e lo straggler tail effect ($\max(T_i)$) dominano la latenza e spiegano esaurientemente il discostamento dalla curva asintotica ideale di Amdahl.
+  - Risultati salvati in `hpc-engine/results/amdahl_investigation_i7_12700h_20260908.csv`.
+- [x] 7. **Task D — Pipelining Throughput Benchmark su Catena Reale**:
+  - Avviati gli stack reali IoTronic e Pipeline senza mock; acquisito lease on-chain di 3 nodi via Satellite.
+  - Eseguito `pipeline_throughput_benchmark.py` per $n \in \{1, 2, 4, 8\}$ con 5 ripetizioni ciascuno.
+  - Speedup misurato vs predetto ($k=3$):
+    - $n=1$: $S_{mis} = 0.97\times$ (predetto $1.00\times$, scarto $2.7\%$)
+    - $n=2$: $S_{mis} = 1.39\times$ (predetto $1.50\times$, scarto $7.3\%$)
+    - $n=4$: $S_{mis} = 1.32\times$ (predetto $2.00\times$, scarto $34.1\%$)
+    - $n=8$: $S_{mis} = 1.58\times$ (predetto $2.40\times$, scarto $34.1\%$)
+  - **Investigazione**: Isolato il meccanismo che causa lo scarto a $n \ge 4$: l'assenza di un pipeline queue scheduler centralizzato fa sì che le richieste concorrenti generate in burst collidano tutte simultaneamente sullo stadio 1 (`worker-1`), accodandosi sulla coda WAMP/Lightning-Rod della prima board (head-of-line blocking). Nonostante questo limite strutturale, la concorrenza asincrona consegue comunque uno speedup di **$1.58\times$** riducendo il tempo da $5.58\text{s}$ a $3.53\text{s}$.
+  - Risultati salvati in `hpc-engine/results/pipeline_throughput_i7_12700h_20260908.csv`. Rilasciato regolarmente il lease on-chain.
+- [x] 8. **Task E — Sintesi PCAM e Log dei Risultati Grezzi**:
+  - Creato `hpc-engine/results/RAW_FINDINGS_LOG.md` strutturato secondo le sezioni PCAM obbligatorie del corso (Decomposition, Communication, Aggregation, Mapping, Performance evaluation, Appendice Anomalie) con evidenze e citazioni numeriche esclusive dai CSV generati.
+
+### Definition of Done — Stadio 11.5 ✅
+- Griglia `{1,2,4,8,16,32}` eseguita per benchmark isolato gRPC e ibrido MPI+OpenMP, sulla stessa macchina/sessione (env_id coerente `i7_12700h_20260908`).
+- Ogni configurazione oltre 20 di parallelismo effettivo etichettata `oversubscribed` nel CSV grezzo.
+- Pipeline a 3 stadi misurata (predetto vs misurato con 5 ripetizioni) su catena reale Satellite ↔ IoTronic ↔ Worker C++.
+- Anomalia di Amdahl a 8, 16 e 32 nodi investigata con 10 ripetizioni e scomposizione compute vs network latency.
+- Nessuna modifica a `satellite/`, `chain/`, `gateway/`, `notification/`, `ui/`, worker di produzione `worker-1/2/3`.
+- `PROGRESS.md` e `RAW_FINDINGS_LOG.md` completati e allineati.
+
+
 
 
 

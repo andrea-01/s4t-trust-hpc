@@ -46,3 +46,11 @@ htmlcov/
 .vscode/
 graphs/
 generate_report_graphs.py
+
+# Benchmark temporary & raw profiler artifacts
+hpc-engine/results/callgrind*
+hpc-engine/results/profile_gprof_raw.txt
+hpc-engine/results/pilot_*.csv
+callgrind.out*
+gmon.out
+*.prof

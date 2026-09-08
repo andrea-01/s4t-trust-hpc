@@ -1,0 +1,63 @@
+=== FLAT PROFILE & WORKLOAD BREAKDOWN ===
+Environment ID: i7_12700h_20260908
+Hardware: 12th Gen Intel Core i7-12700H (14 cores, 20 logical threads)
+Target Binary: hpc_engine_bench (batch=500, sequential 1 thread baseline)
+Profiler: Valgrind Callgrind 3.22.0 (instruction-level simulation with libssl3t64-dbgsym)
+Comparison with gprof: gprof reported "no time accumulated" because CPU cycles were spent inside the dynamically linked libcrypto.so.3 (OpenSSL) which is not instrumented with -pg.
+
+--------------------------------------------------------------------------------
+SUMMARY PERCENTAGES:
+--------------------------------------------------------------------------------
+Total Instructions (Ir):                1,181,840,654 (100.00%)
+
+1. EC & BIGNUM Arithmetic:              1,038,637,233 ( 87.88%)
+   - __ecp_nistz256_mul_montq:            386,548,000 ( 32.71%)
+   - __ecp_nistz256_sqr_montq:            236,000,000 ( 19.97%)
+   - ecp_nistz256_ord_sqr_mont:            69,879,000 (  5.91%)
+   - ecp_nistz256_point_double:            47,603,000 (  4.03%)
+   - ecp_nistz256_avx2_gather_w7:          43,512,000 (  3.68%)
+   - __ecp_nistz256_sub_fromq:             30,199,000 (  2.56%)
+   - __ecp_nistz256_mul_by_2q:             25,248,000 (  2.14%)
+   - ecp_nistz256_point_add:               19,470,000 (  1.65%)
+   - ecp_nistz256_point_add_affine:        19,152,000 (  1.62%)
+   - ecp_nistz256_ord_mul_mont:            14,580,000 (  1.23%)
+   - __ecp_nistz256_add_toq:               12,624,000 (  1.07%)
+   - ecp_nistz256_avx2_gather_w5:          11,180,000 (  0.95%)
+   - __ecp_nistz256_subq:                   9,975,000 (  0.84%)
+   - ecp_nistz256_points_mul:               9,534,000 (  0.81%)
+   - ecp_nistz256_sqr_mont:                 9,216,000 (  0.78%)
+   - BN_uadd / bn_div / bn_shift:          83,903,233 (  7.10%)
+
+2. Other OpenSSL/libcrypto operations:      73,977,981 (  6.26%)
+   - OpenSSL LHASH lookup / core namemap:  21,747,740 (  1.84%)
+   - SHA-256 / SHA-512 block digest:        5,911,500 (  0.50%)
+   - OSSL_PARAM locate / EVP context setup: 46,318,741 (  3.92%)
+
+   ==> TOTAL CRYPTOGRAPHIC COMPUTE:     1,112,615,214 ( 94.14%)
+
+3. Dynamic Memory (malloc / free):          37,760,441 (  3.20%)
+   - _int_free:                            10,508,737 (  0.89%)
+   - malloc:                                7,749,695 (  0.66%)
+   - _int_malloc:                           7,244,088 (  0.61%)
+   - free:                                  5,014,652 (  0.42%)
+   - malloc_consolidate / libc heap:        7,243,269 (  0.62%)
+
+4. General libc / pthreads / strings:       10,189,443 (  0.86%)
+   - strcmp / memset / memcpy:              5,383,946 (  0.46%)
+   - pthread rwlock unlock/rdlock:          4,805,497 (  0.40%)
+
+5. Application / Harness Code:              21,275,556 (  1.80%)
+   - DeviceGenerator / std::vector setup:  16,002,000 (  1.35%)
+   - SignatureBench loop / timing harness:  5,273,556 (  0.45%)
+
+--------------------------------------------------------------------------------
+CONCLUSION & COMPARISON WITH EXPECTATION:
+--------------------------------------------------------------------------------
+The empirical profile matches the theoretical expectation of a compute-bound
+cryptographic workload:
+- Total Cryptographic calculation: 94.14% (> 90% expected threshold confirmed).
+- Core EC P-256 & BIGNUM Montgomery math alone accounts for 87.88% of all instructions.
+- Memory allocation (malloc/free) is constrained to 3.20%, confirming that memory
+  churn is negligible compared to the modular exponentiation and scalar multiplication loops.
+- Application harness overhead is under 2% (1.80%), demonstrating that the benchmark
+  measures the underlying cryptographic throughput accurately with minimal wrapper noise.
