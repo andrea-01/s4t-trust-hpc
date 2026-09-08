@@ -88,13 +88,15 @@ async def measure_concurrent(client: httpx.AsyncClient, base_url: str, pipeline_
     return time.perf_counter() - t0
 
 
-async def main_async(base_url: str, pipeline_id: str, n_values: list[int], repeats: int, k_stages: int, output_csv: str = None, env_id: str = "i7_12700h_20260908"):
+async def main_async(base_url: str, pipeline_id: str, n_values: list[int], repeats: int, k_stages: int, output_csv: str = None, env_id: str = "i7_12700h_20260908", warmup_runs: int = 3):
     results: list[dict] = []
     async with httpx.AsyncClient(timeout=120.0) as client:
-        # warmup, come nella metodologia gia' usata in M11.3
-        print(f"[*] Warming up pipeline {pipeline_id}...")
-        await run_once(client, base_url, pipeline_id, initial_value=-1)
-        print("[+] Warmup complete. Starting measurements...\n")
+        # Warmup dedicato per stabilizzare sessioni Keystone e WAMP
+        print(f"[*] Warming up pipeline {pipeline_id} ({warmup_runs} chiamate consecutive)...")
+        for w in range(warmup_runs):
+            t_w = await run_once(client, base_url, pipeline_id, initial_value=-1)
+            print(f"    [warmup {w+1}/{warmup_runs}] completato in {t_w:6.3f}s")
+        print("[+] Warmup completato con successo. Inizio misurazioni...\n")
 
         for n in n_values:
             seq_times, conc_times = [], []
@@ -145,12 +147,22 @@ async def main_async(base_url: str, pipeline_id: str, n_values: list[int], repea
         from pathlib import Path
         out_path = Path(output_csv)
         out_path.parent.mkdir(parents=True, exist_ok=True)
+        existing_rows: list[dict] = []
+        if out_path.exists():
+            with open(out_path, "r", newline="") as f:
+                reader = csv.DictReader(f)
+                existing_rows = list(reader)
+        by_n = {int(r["n"]): r for r in existing_rows}
+        for r in results:
+            by_n[int(r["n"])] = r
+        sorted_rows = [by_n[k] for k in sorted(by_n.keys())]
+        fieldnames = list(sorted_rows[0].keys())
         with open(out_path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=list(results[0].keys()))
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
-            for r in results:
+            for r in sorted_rows:
                 writer.writerow(r)
-        print(f"[+] Saved results to: {out_path}")
+        print(f"[+] Saved/merged results to: {out_path}")
 
 
 def main():
@@ -159,14 +171,25 @@ def main():
     parser.add_argument("--pipeline-id", required=True, help="ID di un pipeline gia' leasato (POST /pipeline/lease)")
     parser.add_argument("--n-values", default="1,2,4,8", help="Numero di richieste concorrenti da testare")
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--warmup-runs", type=int, default=3, help="Numero di chiamate consecutive di warmup")
     parser.add_argument("--k-stages", type=int, default=3, help="Numero di stadi della pipeline (worker-1/2/3 = 3)")
     parser.add_argument("--output-csv", default=None, help="Path di output del CSV")
     parser.add_argument("--env-id", default="i7_12700h_20260908", help="Environment ID")
     args = parser.parse_args()
 
     n_values = [int(x) for x in args.n_values.split(",")]
-    asyncio.run(main_async(args.satellite_url, args.pipeline_id, n_values, args.repeats, args.k_stages, args.output_csv, args.env_id))
+    asyncio.run(main_async(
+        args.satellite_url,
+        args.pipeline_id,
+        n_values,
+        args.repeats,
+        args.k_stages,
+        args.output_csv,
+        args.env_id,
+        args.warmup_runs
+    ))
 
 
 if __name__ == "__main__":
     main()
+

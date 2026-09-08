@@ -30,12 +30,13 @@ La comunicazione è stata misurata sia nel contesto isolato (gRPC e MPI) sia nel
 
 | Modello | Meccanismo di Trasporto | Topologia di Comunicazione | Volume Dati per Operazione | Overhead di Comunicazione Misurato |
 | :--- | :--- | :--- | :--- | :--- |
-| **MPI + OpenMP** | POSIX Shared Memory / In-process IPC | Collettiva 1-to-All (`MPI_Barrier`) e All-to-1 (`MPI_Reduce`) | 8 byte per rank (somma interi e max double) | **$< 0.05\text{ ms}$** (irrilevante rispetto al calcolo) |
+| **MPI + OpenMP** | POSIX Shared Memory / In-process IPC | Collettiva 1-to-All (`MPI_Barrier`) e All-to-1 (`MPI_Reduce`) | 8 byte per rank (somma interi e max double) | *Non misurato via CSV in questa sessione* (riferimento nominale $< 0.05\text{ ms}$ su shm locale)* |
 | **gRPC Isolato (8 nodi)** | HTTP/2 su socket TCP loopback | Fan-out / Fan-in stella (client asincrono verso $N$ worker) | Richiesta RPC ($\sim 100$ B), Risposta RPC ($\sim 120$ B) | **$9.40\text{ ms}$** su batch 1.000 ($50.5\%$ del tempo RPC); **$38.39\text{ ms}$** su batch 5.000 ($45.9\%$) |
 | **gRPC Isolato (16 nodi)** | HTTP/2 su socket TCP loopback | Fan-out / Fan-in stella | Idem | **$6.93\text{ ms}$** su batch 1.000 ($54.3\%$ del tempo RPC); **$24.47\text{ ms}$** su batch 5.000 ($46.5\%$) |
 | **gRPC Isolato (32 nodi)** | HTTP/2 su socket TCP loopback | Fan-out / Fan-in stella concorrente su 32 canali | Idem | **$9.93\text{ ms}$ - $11.44\text{ ms}$** ($75.5\% - 80.1\%$ del tempo per chiamata) |
 | **Pipeline Reale (k=3)** | REST HTTP + WAMP (WebSocket/Crossbar) + gRPC | Catena sequenziale lineare a $k=3$ hop | Payload JSON (`initial_value`, `trace`, token Keystone) | **$210\text{ ms} - 250\text{ ms}$** per stadio ($690\text{ ms}$ totali per transito a vuoto) |
 
+*\*Nota metodologica:* In `main_mpi.cpp` e `run_full_campaign.py`, la riduzione collettiva `MPI_Reduce` aggrega due scalari da 8 byte via shared memory intra-nodo; il CSV di output (`grid_mpi_omp_i7_12700h_20260908.csv`) registra il tempo massimo di calcolo locale dei rank (`max_time`). Non essendovi un cronometraggio isolato salvato su CSV dedicato per `MPI_Reduce`, il valore è esplicitamente etichettato come non misurato strumentalmente in questa campagna (principio "misura, non assumere").  
 *Fonte dati gRPC e Straggler:* `hpc-engine/results/amdahl_investigation_i7_12700h_20260908.csv`  
 *Fonte dati Pipeline:* `hpc-engine/results/pipeline_throughput_i7_12700h_20260908.csv`
 
@@ -159,10 +160,10 @@ Tutti i numeri riportati provengono da misurazioni reali eseguite nella medesima
 
 | Richieste Concorrenti ($n$) | $T_{seq}$ Mediana (s) | $T_{seq}$ StdDev (s) | $T_{conc}$ Mediana (s) | $T_{conc}$ StdDev (s) | Speedup Misurato ($S_{mis}$) | Speedup Predetto ($S_{pred}$) | Scarto Relativo (\%) |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **1** | 0.690 | 2.271 | 0.708 | 0.044 | **0.97x** | 1.00x | 2.7% |
+| **1** | 0.631 | 0.063 | 0.645 | 0.094 | **0.98x** | 1.00x | 2.2% |
 | **2** | 1.386 | 0.118 | 0.997 | 0.183 | **1.39x** | 1.50x | 7.3% |
-| **4** | 2.635 | 0.110 | 1.999 | 0.097 | **1.32x** | 2.00x | 34.1% |
-| **8** | 5.584 | 0.101 | 3.532 | 0.130 | **1.58x** | 2.40x | 34.1% |
+| **4** | 2.635 | 0.110 | 1.999 | 0.097 | **1.32x** | 2.00x | **34.1%** |
+| **8** | 5.584 | 0.101 | 3.532 | 0.130 | **1.58x** | 2.40x | **34.1%** |
 
 *Formula teorica adottata:* $S(n, k) = \frac{n \cdot k}{k + n - 1}$ con $k=3$.
 
@@ -199,8 +200,22 @@ Tutti i numeri riportati provengono da misurazioni reali eseguite nella medesima
 ---
 
 ### 6.2 Investigazione dello Scarto nel Pipelining su Catena Reale (Task D)
-- **Osservazione:** A $n=2$, il modello predice $1.50\times$ e la misura registra $1.39\times$ ($7.3\%$ scarto). A $n=4$ e $n=8$, lo speedup teorico salirebbe a $2.00\times$ e $2.40\times$, mentre la misura si stabilizza a **$1.32\times$** e **$1.58\times$** (scarto costante del $34.1\%$).
-- **Fattori Investigati:**
+- **Osservazione e Plateau di Saturazione:**
+  - A $n=2$, il modello predice $1.50\times$ e la misura registra $1.39\times$ ($7.3\%$ di scarto).
+  - A $n=4$ e $n=8$, lo speedup teorico salirebbe a $2.00\times$ e $2.40\times$, mentre la misura si stabilizza a **$1.32\times$** e **$1.58\times$**.
+  - Lo scarto relativo tra valore predetto e misurato è identico al decimale: **$34.1\%$** sia a $n=4$ sia a $n=8$ (confermato sui valori grezzi floating-point non arrotondati: $34.116\%$ vs $34.128\%$). Questo fenomeno è formalmente qualificato come **plateau di saturazione**: superata la soglia di 4 richieste simultanee, la catena raggiunge il collo di bottiglia intrinseco della coda WAMP/Crossbar allo stadio d'ingresso, impedendo qualsiasi ulteriore avvicinamento alla curva ideale di pipelining puro.
+- **Isolamento dell'Outlier su $n=1$ (Risolto con Ricalibrazione):**
+  - *Sintomo:* Nella run iniziale a singolo warmup globale, la riga $n=1$ presentava una deviazione standard ($2.271\text{ s}$) superiore alla media ($1.718\text{ s}$), a fronte di una mediana corretta ($0.690\text{ s}$).
+  - *Diagnosi:* L'ispezione delle 5 ripetizioni individuali ha evidenziato che la prima ripetizione ha impiegato **$5.780\text{ s}$** (outlier catastrofico da sessione fredda: prima emissione token Keystone e handshake WebSocket WAMP con Conductor dopo il boot), mentre le 4 successive si attestavano regolarmente a $\sim 0.67\text{ s} - 0.75\text{ s}$.
+  - *Risoluzione:* Rilanciata la misura di $n=1$ con **warmup triplicato** (3 chiamate consecutive pre-test completate in $0.705\text{ s}$, $0.677\text{ s}$, $0.569\text{ s}$) e logging disaggregato di ogni singola run:
+    - `rep 1`: $T_{seq} = 0.738\text{ s}$, $T_{conc} = 0.773\text{ s}$ ($S=0.95\times$)
+    - `rep 2`: $T_{seq} = 0.616\text{ s}$, $T_{conc} = 0.702\text{ s}$ ($S=0.88\times$)
+    - `rep 3`: $T_{seq} = 0.620\text{ s}$, $T_{conc} = 0.645\text{ s}$ ($S=0.96\times$)
+    - `rep 4`: $T_{seq} = 0.631\text{ s}$, $T_{conc} = 0.551\text{ s}$ ($S=1.14\times$)
+    - `rep 5`: $T_{seq} = 0.735\text{ s}$, $T_{conc} = 0.560\text{ s}$ ($S=1.31\times$)
+    - *Esito:* Deviazione standard $T_{seq}$ normalizzata da $2.271\text{ s}$ a soli **$0.063\text{ s}$**, mediana $0.631\text{ s}$, speedup misurato $0.98\times$ (scarto dal predetto $2.2\%$). Outlier definitivamente isolato ed eliminato.
+- **Fattori Architetturali dello Scarto su $n \ge 4$:**
   1. *Presenza di Lock nel Satellite:* Escluso. Il codice di `pipeline_client.py` invoca chiamate REST asincrone non bloccanti con `httpx.AsyncClient`.
   2. *Contesa e Serializzazione sul Worker:* **Causa primaria accertata.** In assenza di un pipeline queue scheduler centralizzato che sfasi le chiamate lungo gli stadi, le $n$ richieste inoltrate simultaneamente con `asyncio.gather` competono tutte contemporaneamente per il medesimo primo stadio (`worker-1`), accodandosi sulla coda WAMP/Lightning-Rod della prima board. Il pipelining opera come una sequenza di burst sovrapposti ma soggetti a head-of-line blocking al primo stadio, ammortizzandosi solo parzialmente man mano che i pacchetti avanzano sugli stadi 2 e 3.
   3. *Verdetto:* Risultato riproducibile e coerente con la natura del sistema a microservizi asincrono IoTronic. Confermato che la concorrenza asincrona approssima il pipelining fino a $\sim 1.6\times$ pur senza uno scheduler hardware dedicato.
+

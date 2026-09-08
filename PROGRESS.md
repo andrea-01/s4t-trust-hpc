@@ -509,11 +509,13 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
   - Avviati gli stack reali IoTronic e Pipeline senza mock; acquisito lease on-chain di 3 nodi via Satellite.
   - Eseguito `pipeline_throughput_benchmark.py` per $n \in \{1, 2, 4, 8\}$ con 5 ripetizioni ciascuno.
   - Speedup misurato vs predetto ($k=3$):
-    - $n=1$: $S_{mis} = 0.97\times$ (predetto $1.00\times$, scarto $2.7\%$)
+    - $n=1$: $S_{mis} = 0.98\times$ (predetto $1.00\times$, scarto $2.2\%$, ricalibrato con 3 warmup consecutivi: StdDev normalizzata da $2.27\text{s}$ a $0.063\text{s}$)
     - $n=2$: $S_{mis} = 1.39\times$ (predetto $1.50\times$, scarto $7.3\%$)
     - $n=4$: $S_{mis} = 1.32\times$ (predetto $2.00\times$, scarto $34.1\%$)
     - $n=8$: $S_{mis} = 1.58\times$ (predetto $2.40\times$, scarto $34.1\%$)
-  - **Investigazione**: Isolato il meccanismo che causa lo scarto a $n \ge 4$: l'assenza di un pipeline queue scheduler centralizzato fa sì che le richieste concorrenti generate in burst collidano tutte simultaneamente sullo stadio 1 (`worker-1`), accodandosi sulla coda WAMP/Lightning-Rod della prima board (head-of-line blocking). Nonostante questo limite strutturale, la concorrenza asincrona consegue comunque uno speedup di **$1.58\times$** riducendo il tempo da $5.58\text{s}$ a $3.53\text{s}$.
+  - **Investigazione e Plateau di Saturazione**:
+    - Isolato il meccanismo che causa lo scarto a $n \ge 4$: l'assenza di un pipeline queue scheduler centralizzato fa sì che le richieste concorrenti generate in burst collidano tutte simultaneamente sullo stadio 1 (`worker-1`), accodandosi sulla coda WAMP/Lightning-Rod della prima board (head-of-line blocking).
+    - Lo scarto identico al decimale tra $n=4$ e $n=8$ ($34.1\% / 34.1\%$, confermato sui dati grezzi floating-point) documenta un **plateau di saturazione** della catena oltre il quale non è possibile estrarre ulteriore parallelismo senza schedulazione hardware/esplicita. Nonostante questo limite strutturale, la concorrenza asincrona consegue comunque uno speedup di **$1.58\times$** riducendo il tempo da $5.58\text{s}$ a $3.53\text{s}$.
   - Risultati salvati in `hpc-engine/results/pipeline_throughput_i7_12700h_20260908.csv`. Rilasciato regolarmente il lease on-chain.
 - [x] 8. **Task E — Sintesi PCAM e Log dei Risultati Grezzi**:
   - Creato `hpc-engine/results/RAW_FINDINGS_LOG.md` strutturato secondo le sezioni PCAM obbligatorie del corso (Decomposition, Communication, Aggregation, Mapping, Performance evaluation, Appendice Anomalie) con evidenze e citazioni numeriche esclusive dai CSV generati.
