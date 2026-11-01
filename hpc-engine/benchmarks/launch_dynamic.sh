@@ -7,6 +7,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+export HWLOC_COMPONENTS="${HWLOC_COMPONENTS:--gl}"
+
 # Arguments:
 # $1: ranks (default: 3, meaning 1 master + 2 workers)
 # $2: chunk_size (default: 50)

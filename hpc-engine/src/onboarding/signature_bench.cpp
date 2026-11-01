@@ -164,3 +164,52 @@ BenchResult SignatureBench::run_parallel_taskloop(const std::vector<Device>& dev
     return res;
 }
 
+BenchResult SignatureBench::run_parallel_range(const std::vector<Device>& devices, size_t start_idx, size_t count, int num_threads) {
+    omp_set_num_threads(num_threads);
+
+    if (std::getenv("OMP_SCHEDULE") == nullptr) {
+        omp_set_schedule(omp_sched_static, 0);
+    }
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+
+    size_t valid_count = 0;
+    size_t end_idx = std::min(start_idx + count, devices.size());
+    size_t actual_count = (end_idx > start_idx) ? (end_idx - start_idx) : 0;
+
+    #pragma omp parallel for schedule(runtime) reduction(+:valid_count)
+    for (size_t i = start_idx; i < end_idx; ++i) {
+        const auto& dev = devices[i];
+
+        EVP_MD_CTX_ptr mdctx(EVP_MD_CTX_new());
+        if (!mdctx) {
+            continue;
+        }
+
+        if (EVP_DigestVerifyInit(mdctx.get(), nullptr, EVP_sha256(), nullptr, dev.keypair.get()) <= 0) {
+            continue;
+        }
+
+        if (EVP_DigestVerify(mdctx.get(), dev.signature.data(), dev.signature.size(), dev.message.data(), dev.message.size()) == 1) {
+            valid_count++;
+        }
+    }
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> diff = end_time - start_time;
+
+    BenchResult res;
+    res.batch_size = actual_count;
+    res.num_threads = num_threads;
+    res.time_seconds = diff.count();
+    res.throughput = (res.time_seconds > 0) ? (actual_count / res.time_seconds) : 0.0;
+    res.valid_count = valid_count;
+
+    if (valid_count != actual_count) {
+        std::cerr << "Warning: not all signatures were valid in range parallel run (" 
+                  << valid_count << "/" << actual_count << ")\n";
+    }
+
+    return res;
+}
+

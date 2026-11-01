@@ -12,8 +12,8 @@
 
 // Message tags for dynamic master-worker protocol
 enum MsgTag {
-    TAG_REQUEST = 1,     // Worker -> Master: request work (includes previous chunk report)
-    TAG_WORK = 2,        // Master -> Worker: chunk assignment {start_index, count, seed}
+    TAG_REQUEST = 1,     // Worker -> Master: request work (includes previous chunk report: {processed, valid})
+    TAG_WORK = 2,        // Master -> Worker: chunk assignment {start_index, count}
     TAG_TERMINATE = 3    // Master -> Worker: no more work available, terminate
 };
 
@@ -115,8 +115,24 @@ int main(int argc, char** argv) {
 
     const std::string csv_file = (argc > 4) ? argv[4] : "results_mpi_dynamic.csv";
 
-    // Synchronize before timing the dynamic execution
+    // 1. Generation Phase: Pre-generate all devices BEFORE timed region.
+    // Rank 0 is dedicated coordinator and does not need dataset in memory.
+    // Worker ranks (1..size-1) generate deterministic dataset using fixed base seed.
+    double t_gen_start = MPI_Wtime();
+    std::vector<Device> all_devices;
+    unsigned int base_seed = 5000;
+    if (rank != 0) {
+        all_devices = DeviceGenerator::generate_devices(total_batch_size, base_seed);
+    }
+    double t_gen_local = MPI_Wtime() - t_gen_start;
+
+    // Synchronize all ranks after generation so timing excludes setup/keygen
     MPI_Barrier(MPI_COMM_WORLD);
+
+    double worker_total_time = 0.0;
+    double worker_verify_time = 0.0;
+    size_t worker_valid_count = 0;
+    size_t worker_processed_count = 0;
 
     if (rank == 0) {
         // --- MASTER PROCESS ---
@@ -128,14 +144,10 @@ int main(int argc, char** argv) {
         std::cout << "[MPI Dynamic Master-Worker] Chunk size: " << chunk_size 
                   << ", Total batch: " << total_batch_size << ", Threads/Worker: " << num_threads << "\n";
 
-        double t_start = MPI_Wtime();
-
         size_t next_index = 0;
         size_t active_workers = static_cast<size_t>(size - 1);
         size_t total_processed = 0;
         size_t total_valid = 0;
-        unsigned int chunk_id = 0;
-        unsigned int base_seed = 5000;
 
         while (active_workers > 0) {
             MPI_Status status;
@@ -148,24 +160,18 @@ int main(int argc, char** argv) {
 
             if (next_index < total_batch_size) {
                 size_t current_chunk = std::min(chunk_size, total_batch_size - next_index);
-                long work[3] = {
+                long work[2] = {
                     static_cast<long>(next_index),
-                    static_cast<long>(current_chunk),
-                    static_cast<long>(base_seed + chunk_id)
+                    static_cast<long>(current_chunk)
                 };
-                MPI_Send(work, 3, MPI_LONG, worker_rank, TAG_WORK, MPI_COMM_WORLD);
+                MPI_Send(work, 2, MPI_LONG, worker_rank, TAG_WORK, MPI_COMM_WORLD);
                 next_index += current_chunk;
-                chunk_id++;
             } else {
-                long terminate_msg[3] = {0, 0, 0};
-                MPI_Send(terminate_msg, 3, MPI_LONG, worker_rank, TAG_TERMINATE, MPI_COMM_WORLD);
+                long terminate_msg[2] = {0, 0};
+                MPI_Send(terminate_msg, 2, MPI_LONG, worker_rank, TAG_TERMINATE, MPI_COMM_WORLD);
                 active_workers--;
             }
         }
-
-        double t_end = MPI_Wtime();
-        double total_time = t_end - t_start;
-        double throughput = (total_time > 0) ? (static_cast<double>(total_valid) / total_time) : 0.0;
 
         // Cross-check: valid_count must strictly equal total_batch_size
         if (total_valid != total_batch_size || total_processed != total_batch_size) {
@@ -174,61 +180,94 @@ int main(int argc, char** argv) {
                       << ", expected=" << total_batch_size << ". Aborting.\n";
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
+    } else {
+        // --- WORKER PROCESS ---
+        // Workers request chunks dynamically from Master (Rank 0)
+        double t_worker_start = MPI_Wtime();
+        long report[2] = {0, 0}; // Initial request has 0 processed, 0 valid
+
+        while (true) {
+            MPI_Send(report, 2, MPI_LONG, 0, TAG_REQUEST, MPI_COMM_WORLD);
+
+            MPI_Status status;
+            long work[2];
+            MPI_Recv(work, 2, MPI_LONG, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+
+            if (status.MPI_TAG == TAG_TERMINATE) {
+                break;
+            }
+
+            size_t start_idx = static_cast<size_t>(work[0]);
+            size_t count = static_cast<size_t>(work[1]);
+
+            // Execute parallel verification on pre-generated devices
+            BenchResult res = SignatureBench::run_parallel_range(all_devices, start_idx, count, num_threads);
+            worker_verify_time += res.time_seconds;
+            worker_processed_count += res.batch_size;
+            worker_valid_count += res.valid_count;
+
+            report[0] = static_cast<long>(res.batch_size);
+            report[1] = static_cast<long>(res.valid_count);
+        }
+
+        worker_total_time = MPI_Wtime() - t_worker_start;
+    }
+
+    // Synchronize completion of all worker activity
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // Reduction phase to compute global metrics consistent with main_mpi.cpp
+    double t_reduce_start = MPI_Wtime();
+    double max_gen_time = 0.0;
+    double max_worker_time = 0.0;
+    double max_verify_time = 0.0;
+    size_t total_verified = 0;
+
+    MPI_Reduce(&worker_total_time, &max_worker_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&worker_verify_time, &max_verify_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_gen_local, &max_gen_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&worker_valid_count, &total_verified, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    double t_reduce_end = MPI_Wtime();
+    double reduce_time = t_reduce_end - t_reduce_start;
+
+    if (rank == 0) {
+        // Denominator is max worker time (excluding setup/keygen), matching main_mpi.cpp
+        double throughput = (max_worker_time > 0) ? (static_cast<double>(total_verified) / max_worker_time) : 0.0;
 
         std::cout << "--- MPI Dynamic Master-Worker Complete ---\n";
         std::cout << "MPI Ranks: " << size << " (1 Master + " << (size - 1) << " Workers)\n";
         std::cout << "Worker Threads: " << num_threads << "\n";
         std::cout << "Chunk Size: " << chunk_size << "\n";
-        std::cout << "Total Devices Verified: " << total_processed << "\n";
-        std::cout << "Valid Signatures: " << total_valid << " (100% Match: YES)\n";
-        std::cout << "Total Time (s): " << total_time << "\n";
+        std::cout << "Total Devices Verified: " << total_verified << "\n";
+        std::cout << "Valid Signatures: " << total_verified << " (100% Match: YES)\n";
+        std::cout << "Max Worker Time (s): " << max_worker_time << "\n";
         std::cout << "Global Throughput (sig/s): " << throughput << "\n";
+        std::cout << "Phase Breakdown (s): Gen=" << max_gen_time
+                  << " Verify=" << max_verify_time
+                  << " Reduce=" << reduce_time << "\n";
 
         // Append to CSV
         std::ofstream out(csv_file, std::ios::app);
         if (out) {
             out.seekp(0, std::ios::end);
             if (out.tellp() == 0) {
-                out << "model,batch_size,mpi_ranks,omp_threads,time_seconds,throughput,chunk_size,worker_ranks,valid_count\n";
+                out << "model,batch_size,mpi_ranks,omp_threads,time_seconds,throughput,chunk_size,worker_ranks,valid_count,gen_time_seconds,verify_time_seconds,reduce_time_seconds\n";
             }
             out << "mpi_dynamic,"
                 << total_batch_size << ","
                 << size << ","
                 << num_threads << ","
-                << total_time << ","
+                << max_worker_time << ","
                 << throughput << ","
                 << chunk_size << ","
                 << (size - 1) << ","
-                << total_valid << "\n";
+                << total_verified << ","
+                << max_gen_time << ","
+                << max_verify_time << ","
+                << reduce_time << "\n";
         } else {
             std::cerr << "Failed to write to " << csv_file << "\n";
-        }
-    } else {
-        // --- WORKER PROCESS ---
-        // Workers request chunks dynamically from Master (Rank 0)
-        long report[2] = {0, 0}; // Initial request has 0 processed, 0 valid
-        while (true) {
-            MPI_Send(report, 2, MPI_LONG, 0, TAG_REQUEST, MPI_COMM_WORLD);
-
-            MPI_Status status;
-            long work[3];
-            MPI_Recv(work, 3, MPI_LONG, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-
-            if (status.MPI_TAG == TAG_TERMINATE) {
-                break;
-            }
-
-            size_t count = static_cast<size_t>(work[1]);
-            unsigned int seed = static_cast<unsigned int>(work[2]);
-
-            // Generate assigned chunk of devices deterministically
-            auto devices = DeviceGenerator::generate_devices(count, seed);
-
-            // Execute parallel verification with OpenMP
-            BenchResult res = SignatureBench::run_parallel(devices, num_threads, count);
-
-            report[0] = static_cast<long>(res.batch_size);
-            report[1] = static_cast<long>(res.valid_count);
         }
     }
 

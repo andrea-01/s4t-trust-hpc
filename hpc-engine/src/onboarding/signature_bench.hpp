@@ -20,4 +20,7 @@ public:
 
     // Parallel signature verification using OpenMP taskloop (task-based variant)
     static BenchResult run_parallel_taskloop(const std::vector<Device>& devices, int num_threads, size_t limit = 0, size_t grainsize = 0);
+
+    // Parallel signature verification for a specific index range [start_idx, start_idx + count)
+    static BenchResult run_parallel_range(const std::vector<Device>& devices, size_t start_idx, size_t count, int num_threads);
 };
