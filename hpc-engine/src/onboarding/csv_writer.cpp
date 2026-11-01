@@ -9,11 +9,12 @@ void CSVWriter::write_results(const std::string& filename, const std::vector<Ben
         return;
     }
     
-    out << "batch_size,num_threads,time_seconds,throughput\n";
+    out << "batch_size,num_threads,time_seconds,throughput,valid_count\n";
     for (const auto& res : results) {
         out << res.batch_size << ","
             << res.num_threads << ","
             << res.time_seconds << ","
-            << res.throughput << "\n";
+            << res.throughput << ","
+            << res.valid_count << "\n";
     }
 }

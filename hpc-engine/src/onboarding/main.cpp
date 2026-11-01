@@ -50,17 +50,26 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        // Sequential run
-        std::cout << "Running sequential (batch: " << batch_size << ")...\n";
-        all_results.push_back(SignatureBench::run_sequential(devices, static_cast<size_t>(batch_size)));
+        bool skip_seq = (mode == "taskloop" || mode == "for" || std::getenv("SKIP_SEQUENTIAL") != nullptr);
+        if (mode == "seq") {
+            skip_seq = false;
+        }
 
-        // Parallel runs
-        for (int threads : thread_counts) {
-            std::cout << "Running parallel [" << mode << "] (batch: " << batch_size << ", threads: " << threads << ")...\n";
-            if (mode == "taskloop") {
-                all_results.push_back(SignatureBench::run_parallel_taskloop(devices, threads, static_cast<size_t>(batch_size), grainsize));
-            } else {
-                all_results.push_back(SignatureBench::run_parallel(devices, threads, static_cast<size_t>(batch_size)));
+        if (!skip_seq) {
+            std::cout << "Running sequential (batch: " << batch_size << ")...\n";
+            all_results.push_back(SignatureBench::run_sequential(devices, static_cast<size_t>(batch_size)));
+        }
+
+        if (mode != "seq") {
+            // Parallel runs
+            for (int threads : thread_counts) {
+                if (threads <= 0) continue;
+                std::cout << "Running parallel [" << mode << "] (batch: " << batch_size << ", threads: " << threads << ")...\n";
+                if (mode == "taskloop") {
+                    all_results.push_back(SignatureBench::run_parallel_taskloop(devices, threads, static_cast<size_t>(batch_size), grainsize));
+                } else {
+                    all_results.push_back(SignatureBench::run_parallel(devices, threads, static_cast<size_t>(batch_size)));
+                }
             }
         }
     }
