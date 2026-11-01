@@ -74,9 +74,10 @@ fi
 export OMP_NUM_THREADS="${THREADS}"
 
 ${PREFIX_CMD} mpirun \
+    --use-hwthread-cpus \
     --report-bindings \
     --map-by "slot:PE=${THREADS}" \
-    --bind-to core \
+    --bind-to hwthread \
     -np "${RANKS}" \
     "${BIN}" "${BATCH_SIZE}" "${CHUNK_SIZE}" "${THREADS}" "${CSV_OUT}"
 

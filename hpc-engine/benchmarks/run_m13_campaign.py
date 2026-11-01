@@ -284,8 +284,7 @@ def execute_task(task: Dict[str, Any], log_file: Path) -> Dict[str, Any]:
 
         elif exp == "E4":
             addrs = ALL_WORKERS[:ranks]
-            loop = asyncio.get_event_loop()
-            res = loop.run_until_complete(run_grpc_batch(addrs, batch, threads, base_seed=1000 + task["rep"] * 31))
+            res = asyncio.run(run_grpc_batch(addrs, batch, threads, base_seed=1000 + task["rep"] * 31))
             time_seconds = res["total_time"]
             throughput = res["throughput"]
             valid_count = res["valid_count"]
@@ -691,8 +690,7 @@ def run_experiment_campaign(
     if exp == "E4":
         # Check gRPC workers
         print("Checking health of gRPC benchmark containers for E4...")
-        loop = asyncio.get_event_loop()
-        healthy = loop.run_until_complete(check_grpc_workers_online(32))
+        healthy = asyncio.run(check_grpc_workers_online(32))
         if not healthy:
             raise RuntimeError(
                 "E4 requires all 32 bench-worker containers online (ports 51051-51082). "
