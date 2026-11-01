@@ -1,6 +1,7 @@
 #include "signature_bench.hpp"
 #include <chrono>
 #include <iostream>
+#include <cstdlib>
 #include <omp.h>
 
 BenchResult SignatureBench::run_sequential(const std::vector<Device>& devices, size_t limit) {
@@ -45,13 +46,19 @@ BenchResult SignatureBench::run_sequential(const std::vector<Device>& devices, s
 
 BenchResult SignatureBench::run_parallel(const std::vector<Device>& devices, int num_threads, size_t limit) {
     omp_set_num_threads(num_threads);
+
+    // If OMP_SCHEDULE is not explicitly set in the environment, default to static schedule (chunk=0)
+    // to preserve backward compatibility with the previous static schedule behavior.
+    if (std::getenv("OMP_SCHEDULE") == nullptr) {
+        omp_set_schedule(omp_sched_static, 0);
+    }
     
     auto start_time = std::chrono::high_resolution_clock::now();
     
     size_t valid_count = 0;
     size_t actual_limit = (limit == 0 || limit > devices.size()) ? devices.size() : limit;
     
-    #pragma omp parallel for reduction(+:valid_count)
+    #pragma omp parallel for schedule(runtime) reduction(+:valid_count)
     for (size_t i = 0; i < actual_limit; ++i) {
         const auto& dev = devices[i];
         
