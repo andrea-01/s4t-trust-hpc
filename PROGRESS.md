@@ -681,3 +681,58 @@ oppure:
 sudo bash -c 'for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo performance > "$g"; done'
 ```
 
+## Fase: M13 (Revisione Progetto HPC) — Stadio 13.3 (Campagna Sperimentale)
+
+**Data:** 2026-11-01  
+**Obiettivo:** Esecuzione rigorosa della campagna sperimentale su strong scaling (batch = 20.000 firme), 10 ripetizioni intercalate randomicamente, controllo di correttezza `valid_count == batch` su ogni run, generazione dataset grezzi senza alterazione dei dati storici.
+
+### 1. Precondizioni e Impronta Ambientale
+- **CPU Scaling Governor:** Impostato e verificato a `20 performance` su tutte le 20 CPU logiche (`cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`).
+- **Macchina e Ambiente:**
+  - Carico a riposo (load average < 0.20, nessun processo di benchmark concorrente).
+  - Impronta registrata in `hpc-engine/results/m13/environment_fingerprint.txt`:
+    - Kernel: `Linux sandbox 7.0.0-38-generic #38~24.04.4-Ubuntu SMP PREEMPT_DYNAMIC`
+    - CPU: `12th Gen Intel(R) Core(TM) i7-12700H` (6 P-cores con Hyper-Threading = 12 thread, 8 E-cores = 8 thread, 20 thread logici totali).
+    - Open MPI: `4.1.6`
+    - GCC: `13.3.0`
+    - libgomp: `14.2.0-4ubuntu2~24.04.1`
+    - Binari eseguiti su host nativo per E0, E1, E2, E3, E5, E6, E8.
+    - Binari containerizzati (`deploy-bench-worker-*`) per E4.
+
+### 2. Esito del Passo 1 — Diagnosi e Risoluzione del Master-Worker Dinamico
+- **Diagnosi:** In `main_mpi_dynamic.cpp` la generazione dei device (keygen ECDSA + firma) avveniva all'interno del loop di ciascun chunk dei worker, all'interno della regione cronometrata dal master (Rank 0). Inoltre il denominatore del throughput utilizzava il tempo del coordinatore anziché il tempo massimo di completamento dei worker (`max_worker_time`).
+- **Risoluzione (Commit `f641a39`):**
+  - Implementata `SignatureBench::run_parallel_range(...)` in `signature_bench.hpp` e `.cpp`.
+  - Dataset completo di 20.000 firme pre-generato prima di `MPI_Barrier(MPI_COMM_WORLD)`.
+  - I worker ricevono via MPI unicamente gli indici `{start_index, chunk_size}` ed eseguono la sola verifica crittografica sui dati già in memoria.
+  - Sincronizzazione finale con riduzione `MPI_Reduce(..., MPI_MAX)` del tempo massimo del worker e decomposizione per fase (`Gen`, `Verify`, `Reduce`).
+- **Verifica e Scomposizione (Batch 5.000, R=4, 1 Master + 3 Worker, 1 thread per worker, P-cores 0-11):**
+  - Chunk 25: Max Worker Time = `0.0940 s`, Throughput = `53.204,1 sig/s` (Gen = `0.202 s`, Verify = `0.0938 s`, Reduce = `0.000023 s`).
+  - Chunk 100: Max Worker Time = `0.0950 s`, Throughput = `52.655,4 sig/s` (Gen = `0.202 s`, Verify = `0.0949 s`, Reduce = `0.000018 s`).
+  - Chunk 500: Max Worker Time = `0.1157 s`, Throughput = `43.222,1 sig/s` (Gen = `0.203 s`, Verify = `0.1156 s`, Reduce = `0.000038 s`).
+  - Chunk 1000: Max Worker Time = `0.1127 s`, Throughput = `44.350,4 sig/s` (Gen = `0.206 s`, Verify = `0.1127 s`, Reduce = `0.000026 s`).
+  - *Esito:* A chunk fini (25 e 100) il throughput raggiunge `~52.6k–53.2k sig/s`, confermando esattamente il rapporto teorico atteso di `~0.76–0.78×` rispetto ai 4 rank del benchmark statico (68.5k sig/s $\times$ 3/4 = 51.4k). A chunk grossolani (500 e 1000) si manifesta load imbalance per divisione non intera dei chunk sui 3 worker. L'overhead di comunicazione MPI per messaggio è risultato ~100 µs, trascurabile rispetto alla computazione.
+
+### 3. Anomalie Tecniche e Risoluzione nei Launch Script
+- **Sonda HWLOC su X11 / OpenGL:** Open MPI 4.1.6 tentava la connessione ai socket grafici Wayland/X11 dell'host in assenza di credenziali Xauth nel sandbox, causando timeout. Risolto esportando `HWLOC_COMPONENTS="${HWLOC_COMPONENTS:--gl}"` in tutti gli script di lancio e nel driver Python.
+- **Slot Hardware su CPU Ibride Alder Lake:** Open MPI di default limita il numero di slot allocabili ai 14 core fisici. Risolto aggiungendo `--use-hwthread-cpus` per mappare tutti i 20 hardware thread logici.
+- **Binding Ibrido MPI+OpenMP:** Con `--use-hwthread-cpus` e PE arbitrari (es. $T=3, 5$), Open MPI richiede binding coerente a livello di thread. Risolto impostando `--bind-to hwthread` in `launch_hybrid.sh` e `launch_dynamic.sh`. Il binding risultante è stato verificato e registrato tramite `--report-bindings` nei file di log in `hpc-engine/results/m13/logs/`.
+
+### 4. Risultati della Campagna di Misura
+- **Driver Unificato:** `hpc-engine/benchmarks/run_m13_campaign.py` (Commit `236c318` e `4f35221`), con supporto per strong scaling batch 20.000, 10 ripetizioni intercalate randomicamente (seed 42), ripresa incrementale (`--resume`), log dettagliati in `results/m13/logs/` e verifica tassativa `assert valid_count == batch`.
+- **Riepilogo Righe e Run Eseguiti:**
+
+| Esperimento | Modello | Griglia Config | Run Totali | File CSV Risultati | Esito Correttezza |
+|---|---|---|---|---|---|
+| **E0** | Sequenziale | T1, baseline unica | 10 run | `results_e0_sequential.csv` & `t1_baseline.csv` | 100% Valid (20.000/20.000) |
+| **E1** | OpenMP puro (`for`) | T = 1,2,3,4,6,8,10,12,14,16,18,20 | 120 run | `results_e1_omp_pure.csv` | 100% Valid (20.000/20.000) |
+| **E2** | MPI puro (1 thr/rank) | R = 1,2,3,4,6,8,10,12,14,16,18,20 (`--bind-to core`) | 120 run | `results_e2_mpi_pure.csv` | 100% Valid (20.000/20.000) |
+| **E3** | Ibrido MPI+OpenMP | 12 config R×T (8..20) + 2 controlli unbound | 140 run | `results_e3_hybrid.csv` | 100% Valid (20.000/20.000) |
+| **E4** | gRPC + OpenMP | 12 config container `bench-worker-*` | 120 run | `results_e4_grpc.csv` | 100% Valid (20.000/20.000) |
+| **E5** | Schedule OpenMP | static / dynamic,16 / guided su T=4..20 | 150 run | `results_e5_schedule.csv` | 100% Valid (20.000/20.000) |
+| **E6** | Task-based | taskloop (grain 10..500) + dynamic (R=4..12) | 270 run | `results_e6_taskbased.csv` | 100% Valid (20.000/20.000) |
+| **E8** | Ipotesi P/E-core | OpenMP e MPI su soli P-cores (`taskset -c 0-11`) | 160 run | `results_e8_pcores.csv` | 100% Valid (20.000/20.000) |
+
+- **Verifica Globale di Integrità:** Controllate tutte le 1.100 righe CSV generate in `hpc-engine/results/m13/`: ogni singolo record soddisfa rigorosamente `valid_count == 20000` (100% match, zero fallimenti).
+- **Esperimento E7 (Pipeline reale Stack4Things/IoTronic):** Esecuzione demandata come ultimo step facoltativo dopo preavviso e conferma dell'utente.
+

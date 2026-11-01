@@ -71,6 +71,7 @@ fi
 export OMP_NUM_THREADS="${THREADS}"
 
 ${PREFIX_CMD} mpirun \
+    --use-hwthread-cpus \
     --report-bindings \
     --bind-to none \
     -np "${RANKS}" \

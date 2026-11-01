@@ -69,6 +69,7 @@ if [ "${USE_PCORES}" -eq 1 ]; then
 fi
 
 ${PREFIX_CMD} mpirun \
+    --use-hwthread-cpus \
     --report-bindings \
     --bind-to core \
     -np "${RANKS}" \

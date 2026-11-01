@@ -1,0 +1,11 @@
+experiment,model,ranks,threads,p_eff,batch,rep,time_seconds,throughput,valid_count,gen_s,verify_s,reduce_s,binding,cpuset,schedule,oversubscribed
+E0,sequential,1,1,1,20000,0,1.08046,18510.6,20000,0.0,1.08046,0.0,none,all,none,0
+E0,sequential,1,1,1,20000,7,1.13781,17577.6,20000,0.0,1.13781,0.0,none,all,none,0
+E0,sequential,1,1,1,20000,3,1.10566,18088.7,20000,0.0,1.10566,0.0,none,all,none,0
+E0,sequential,1,1,1,20000,2,1.08749,18391.0,20000,0.0,1.08749,0.0,none,all,none,0
+E0,sequential,1,1,1,20000,8,1.10854,18041.7,20000,0.0,1.10854,0.0,none,all,none,0
+E0,sequential,1,1,1,20000,5,1.10557,18090.3,20000,0.0,1.10557,0.0,none,all,none,0
+E0,sequential,1,1,1,20000,6,1.11729,17900.4,20000,0.0,1.11729,0.0,none,all,none,0
+E0,sequential,1,1,1,20000,9,1.09852,18206.4,20000,0.0,1.09852,0.0,none,all,none,0
+E0,sequential,1,1,1,20000,4,1.08208,18482.9,20000,0.0,1.08208,0.0,none,all,none,0
+E0,sequential,1,1,1,20000,1,1.10166,18154.4,20000,0.0,1.10166,0.0,none,all,none,0
