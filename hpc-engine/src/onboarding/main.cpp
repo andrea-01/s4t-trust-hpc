@@ -20,8 +20,8 @@ std::vector<int> parse_comma_separated(const std::string& str) {
 
 int main(int argc, char* argv[]) {
     if (argc < 4) {
-        std::cerr << "Usage: " << argv[0] << " <dataset_size> <batch_sizes_csv> <thread_counts_csv> [output_csv]\n";
-        std::cerr << "Example: " << argv[0] << " 500 100,250,500 1,2,4 results.csv\n";
+        std::cerr << "Usage: " << argv[0] << " <dataset_size> <batch_sizes_csv> <thread_counts_csv> [output_csv] [mode: for|taskloop] [grainsize]\n";
+        std::cerr << "Example: " << argv[0] << " 500 100,250,500 1,2,4 results.csv taskloop 25\n";
         return 1;
     }
 
@@ -29,6 +29,15 @@ int main(int argc, char* argv[]) {
     std::vector<int> batch_sizes = parse_comma_separated(argv[2]);
     std::vector<int> thread_counts = parse_comma_separated(argv[3]);
     std::string output_csv = (argc > 4) ? argv[4] : "results.csv";
+    std::string mode = (argc > 5) ? argv[5] : "for";
+    size_t grainsize = 0;
+    if (argc > 6) {
+        try {
+            grainsize = std::stoull(argv[6]);
+        } catch (...) {
+            grainsize = 0;
+        }
+    }
 
     std::cout << "Generating " << dataset_size << " devices (this may take a while)...\n";
     auto devices = DeviceGenerator::generate_devices(dataset_size, 42); // deterministic seed
@@ -47,8 +56,12 @@ int main(int argc, char* argv[]) {
 
         // Parallel runs
         for (int threads : thread_counts) {
-            std::cout << "Running parallel (batch: " << batch_size << ", threads: " << threads << ")...\n";
-            all_results.push_back(SignatureBench::run_parallel(devices, threads, static_cast<size_t>(batch_size)));
+            std::cout << "Running parallel [" << mode << "] (batch: " << batch_size << ", threads: " << threads << ")...\n";
+            if (mode == "taskloop") {
+                all_results.push_back(SignatureBench::run_parallel_taskloop(devices, threads, static_cast<size_t>(batch_size), grainsize));
+            } else {
+                all_results.push_back(SignatureBench::run_parallel(devices, threads, static_cast<size_t>(batch_size)));
+            }
         }
     }
 

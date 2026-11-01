@@ -15,6 +15,9 @@ public:
     // Sequential signature verification baseline
     static BenchResult run_sequential(const std::vector<Device>& devices, size_t limit = 0);
     
-    // Parallel signature verification using OpenMP
+    // Parallel signature verification using OpenMP parallel for
     static BenchResult run_parallel(const std::vector<Device>& devices, int num_threads, size_t limit = 0);
+
+    // Parallel signature verification using OpenMP taskloop (task-based variant)
+    static BenchResult run_parallel_taskloop(const std::vector<Device>& devices, int num_threads, size_t limit = 0, size_t grainsize = 0);
 };
