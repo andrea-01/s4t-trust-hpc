@@ -42,7 +42,16 @@ bool run_sanity_check() {
 }
 
 int main(int argc, char** argv) {
-    MPI_Init(&argc, &argv);
+    // Initialize MPI with thread support.
+    // In this hybrid model, MPI calls are executed strictly from the master thread
+    // outside of any OpenMP parallel regions (MPI_THREAD_FUNNELED).
+    int provided = 0;
+    int init_status = MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+    if (init_status != MPI_SUCCESS || provided < MPI_THREAD_FUNNELED) {
+        std::cerr << "Fatal: MPI implementation does not provide required MPI_THREAD_FUNNELED support. "
+                  << "Provided level: " << provided << ", required: " << MPI_THREAD_FUNNELED << ". Aborting.\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
 
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
