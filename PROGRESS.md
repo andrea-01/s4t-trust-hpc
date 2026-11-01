@@ -528,6 +528,94 @@ In data 2026-08-31 è stata eseguita una sessione di verifica end-to-end dal viv
 - Nessuna modifica a `satellite/`, `chain/`, `gateway/`, `notification/`, `ui/`, worker di produzione `worker-1/2/3`.
 - `PROGRESS.md` e `RAW_FINDINGS_LOG.md` completati e allineati.
 
+## Fase: M13 (Revisione Progetto HPC) — Stadio 13.1 (Verifica dello Stato Reale)
+
+**Data:** 2026-11-01  
+**Obiettivo:** Audit e verifica reale dello stato dei file di benchmark, profiling, grafici, hardware e sorgenti C++/MPI, senza modifiche di codice.
+
+### 1. Censimento Directory e Individuazione Script/Report
+- **`hpc-engine/results/`**:
+  - `amdahl_investigation_i7_12700h_20260908.csv` (120 record, 12 config × 10 ripetizioni, decomposizione compute vs rpc latency)
+  - `grid_grpc_i7_12700h_20260908.csv` (48 config gRPC, batch 1000/5000, nodi 1..32, thread 1..8)
+  - `grid_mpi_omp_i7_12700h_20260908.csv` (48 config MPI+OpenMP, batch 1000/5000, rank 1..32, thread 1..8)
+  - `pipeline_throughput_i7_12700h_20260908.csv` (4 record per n=1,2,4,8, catena reale k=3)
+  - `pilot_32x8_5000.csv` (run pilota preliminare esclusa dai grafici formali)
+  - `profile_i7_12700h_20260908.txt` (sintesi flat profile Valgrind Callgrind, batch 500)
+  - `callgrind.out` e `callgrind_annotate.txt` (output grezzo Callgrind, ignorati da git)
+  - `profile_gprof_raw.txt` (output gprof preliminare non instrumentato, 0.00s)
+  - `environment_fingerprint_20260908.txt` (dati hardware e sistema host)
+  - `RAW_FINDINGS_LOG.md` (sintesi formale PCAM M11.5)
+- **`hpc-engine/benchmarks/`**:
+  - `run_full_campaign.py` (driver completo per Task B e C)
+  - `run_benchmark.py` (driver standalone gRPC task-parallel)
+  - `compute_metrics.py` (calcolo metriche Speedup, Efficiency, Amdahl)
+  - `pipeline_pb2.py` e `pipeline_pb2_grpc.py` (stub gRPC generati, ignorati e non tracciati)
+- **`hpc-engine/Dockerfile.profile`**:
+  - Presente e funzionante: installa `libssl-dev`, `valgrind`, `libssl3t64-dbgsym` su Ubuntu 24.04, compila con `-O2 -g -fopenmp -std=c++17`.
+- **Script di generazione grafici**:
+  - `generate_report_graphs.py` (in root del workspace): 736 righe Python, legge i CSV da `hpc-engine/results/` e genera 14 grafici (PNG 300 dpi e PDF vettoriali) in `graphs/`. Nota: `generate_report_graphs.py` e `graphs/` sono attualmente esclusi da `.gitignore`.
+- **Individuazione `main.tex` (Report LaTeX in inglese)**:
+  - **NON presente nel repository** (nessun file `.tex` in `report/`, `docs/`, root, né in cronologia git).
+  - La ricerca globale su filesystem e cronologie IDE ha rilevato solo riferimenti storici a un path esterno (`/media/adima/Windows-SSD/Users/adima/Università/Tesi magistrale/main.tex`), i cui contenuti in cache appartengono a un diverso progetto (database a grafo Neo4j).
+  - **Stato**: Il sorgente `main.tex` del report HPC non esiste attualmente su disco nel filesystem accessibile.
+
+### 2. Tabella di Tracciabilità (Figure 1-5, Tabelle 1-4)
+
+| Elemento Report | Contenuto / Metrica | CSV / Output Grezzo | Script Generatore | Riproducibile? | Commit Riferimento |
+| :--- | :--- | :--- | :--- | :---: | :--- |
+| **Fig. 1 / Tab. 1** | Flat Instruction Profile Callgrind (94.14% calcolo crypto, 87.88% EC/BIGNUM, 3.20% malloc) | `hpc-engine/results/profile_i7_12700h_20260908.txt`, `callgrind.out`, `callgrind_annotate.txt` | `valgrind --tool=callgrind` via `Dockerfile.profile` + `plot_a_profile_breakdown()` in `generate_report_graphs.py` | **Sì** | `4f2d8668` |
+| **Tab. 2** | Overhead di comunicazione (confronto modelli: MPI, gRPC 8/16/32, Pipeline k=3) | gRPC: `amdahl_investigation_...csv`; Pipeline: `pipeline_throughput_...csv`; **MPI: NESSUNO** | `run_full_campaign.py` (gRPC), `pipeline_throughput_benchmark.py` (Pipeline). **Nessun script per overhead MPI** | **Parziale** (MPI non misurato strumentalmente, dichiarato nominale) | `4f2d8668` / `ee99b108` |
+| **Fig. 2 / Fig. 3** | Griglia di scaling gRPC e MPI+OpenMP fino a 32 nodi/rank (Speedup e Throughput, batch 1000/5000) | `hpc-engine/results/grid_grpc_i7_12700h_20260908.csv` e `grid_mpi_omp_i7_12700h_20260908.csv` | `hpc-engine/benchmarks/run_full_campaign.py` + `plot_b_grpc_grid()`, `plot_c_mpi_omp_grid()`, `plot_d_substrate_comparison()` | **Sì** | `4f2d8668` |
+| **Fig. 4 / Tab. 3** | Investigazione anomalia di Amdahl & Overhead breakdown (scomposizione compute C++ vs RPC network) | `hpc-engine/results/amdahl_investigation_i7_12700h_20260908.csv` | `run_full_campaign.py --target amdahl` + `plot_e_amdahl_and_overhead()` in `generate_report_graphs.py` | **Sì** | `4f2d8668` |
+| **Fig. 5 / Tab. 4** | Pipelining a 3 stadi su catena reale ($k=3$, $n \in \{1,2,4,8\}$, speedup predetto vs misurato) | `hpc-engine/results/pipeline_throughput_i7_12700h_20260908.csv` | `pipeline_throughput_benchmark.py` + `plot_f_pipelining()` in `generate_report_graphs.py` | **Sì** | `4f2d8668`, ricalibrato in `ee99b108` |
+
+#### Evidenze e Criticità Emerse dall'Audit:
+1. **Profilo Callgrind (Fig. 1 / Tab. 1)**: Callgrind conta istruzioni simulate ($1.181.840.654\text{ Ir}$), **non tempo reale di esecuzione**. Nel report la dicitura "of the total time" va corretta in "% Ir / instruction count".
+2. **Griglia gRPC fino a 32 worker (Fig. 2-3)**: I punti con $P_{eff} > 20$ (es. $32 \times 1, 32 \times 8$) sono eseguiti in oversubscription hardware sull'host a 20 thread logici. Manca un grafico unificato con curve di speedup sovrapposte su asse unico per MPI puro, OpenMP puro, ibrido e gRPC (rilievo R7 del revisore).
+3. **Valori di Amdahl e Ripetizioni (Tab. 3 / Fig. 4)**:
+   - **Discrepanza ripetizioni**: Il CSV e `RAW_FINDINGS_LOG.md` riportano **10 ripetizioni** (12 configurazioni × 10 = 120 run). Tabella 3 riportava 10 ripetizioni, ma nel testo del report (§7.1) veniva scritto erroneamente "3 ripetizioni".
+   - **Frazione seriale $f_s$**: Il valore $f_s = 0.0251$ (2.51%) usato per la curva teorica in `generate_report_graphs.py` (riga 458) è ereditato da una campagna preliminare a 2 nodi × 1 thread (M11.3), anziché ricalcolato internamente alla campagna corrente con intervallo di confidenza.
+4. **Pipeline a 3 stadi (Fig. 5 / Tab. 4)**:
+   - Misurate solo 4 configurazioni ($n \in \{1, 2, 4, 8\}$). Mancano i punti intermedi $n=3,5,6,7$.
+   - Lo scarto relativo identico al $34.1\%$ tra $n=4$ e $n=8$ ($1.32/2.00$ vs $1.58/2.40$) è una coincidenza aritmetica derivante dai valori arrotondati, non la prova rigorosa di un plateau di saturazione a soglia $n=4$.
+   - L'ipotesi di head-of-line blocking nella coda WAMP/Crossbar dello stadio 1 va verificata con scansione completa o riformulata come ipotesi.
+
+### 3. Verifica Git Ignore per Stub gRPC
+Eseguito:
+```bash
+$ git check-ignore -v hpc-engine/benchmarks/pipeline_pb2.py hpc-engine/benchmarks/pipeline_pb2_grpc.py
+.gitignore:24:**/*_pb2.py	hpc-engine/benchmarks/pipeline_pb2.py
+.gitignore:25:**/*_pb2_grpc.py	hpc-engine/benchmarks/pipeline_pb2_grpc.py
+
+$ git ls-files hpc-engine/benchmarks/pipeline_pb2*
+# (output vuoto: nessun file tracciato)
+```
+Esito: Entrambi i file sono correttamente ignorati da git e non tracciati nel repository.
+
+### 4. Mappatura Hardware P-core/E-core e Scaling Governor
+Eseguito `lscpu --extended` e ispezione governor CPU:
+- **CPU**: Intel Core i7-12700H (14 core fisici, 20 thread logici).
+- **Mappa P-core (Performance Cores)**:
+  - 6 core fisici (CORE 0..5), 12 thread logici (CPU 0..11, 2 thread per core con Hyper-Threading).
+  - Frequenze: Max 4600–4700 MHz, Min 400 MHz.
+  - Cache L1/L2 dedicate per core (L1d:L1i:L2 = 32K/32K/1280K per core).
+- **Mappa E-core (Efficient Cores)**:
+  - 8 core fisici (CORE 6..13), 8 thread logici (CPU 12..19, 1 thread per core, no SMT/Hyper-Threading).
+  - Frequenze: Max 3500 MHz, Min 400 MHz.
+  - Cache L2 condivise a gruppi di 4 (L2 index 6 per CPU 12-15, index 7 per CPU 16-19, 2048K ciascuna).
+- **CPU Scaling Governor**:
+  - `cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`:
+    Tutti i 20 thread logici (CPU 0..19) sono impostati sul governor `powersave` (predefinito del driver `intel_pstate`).
+
+### 5. Stato dei File Sorgente C++ / MPI / OpenMP
+- **`hpc-engine/src/mpi_experiment/main_mpi.cpp`**:
+  - Riga 45: `MPI_Init(&argc, &argv);` $\to$ usa `MPI_Init`, **NON** `MPI_Init_thread`.
+  - Riga 109: `BenchResult local_res = SignatureBench::run_parallel(...)` $\to$ **SÌ**, usa `run_parallel` con OpenMP all'interno di ciascun rank MPI (ibrido reale).
+  - Mancanza: Non contiene misurazione strumentata del tempo di riduzione/comunicazione con `MPI_Wtime`.
+- **`hpc-engine/src/onboarding/signature_bench.cpp`**:
+  - Riga 54: `#pragma omp parallel for reduction(+:valid_count)` $\to$ **NON possiede alcuna clausola `schedule`** (utilizza il default OpenMP, tipicamente statico).
+
+
 
 
 

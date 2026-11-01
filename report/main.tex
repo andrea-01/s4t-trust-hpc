@@ -1,0 +1,235 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{float}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+\captionsetup{font=small}
+
+\title{\textbf{Report --- High Performance Computing} \\[0.2cm]
+\large Project \texttt{s4t-trust-hpc}: distributed verification of ECDSA signatures}
+\author{Andrea Di Marco}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-0.4cm}
+
+% =====================================================
+\section*{1. Introduction}
+
+The compute-intensive workload chosen for this work is the verification of ECDSA digital signatures on the NIST P-256 curve, the step that the \texttt{s4t-trust-hpc} platform performs to decide whether an IoT device is authorized to be onboarded. That platform was developed for the Distributed Systems course, and it provides a real infrastructure on which to build and measure the HPC component. The report covers, with real experimental data: data parallelism with OpenMP, task parallelism in two independent implementations (MPI and gRPC dispatch) measured up to 32 nodes, two hybrid combinations of task and data parallelism, a three-stage pipeline model on the production chain, and the formal metrics of Speedup, Efficiency, Amdahl's law and Scalability.
+
+\subsection*{Measurement environments}
+
+The data reported here come from two different infrastructures, used for different purposes and never mixed together.
+
+\begin{sloppypar}
+The first is an \textbf{isolated benchmark}: a set of ephemeral Docker containers (\texttt{bench-worker-1..32}), each a standalone gRPC process exposing the signature-verification function, with no connection to Stack4Things/IoTronic. It is the environment on which the entire extended task and data parallelism grid runs, because it allows the number of nodes to be varied freely (up to 32) and each configuration to be repeated multiple times without the cost of provisioning real boards. Measurements from this environment are clean in the sense that they isolate the pure compute and network cost, without the authentication or the messaging bus of the production platform.
+\end{sloppypar}
+
+The second is the \textbf{real production pipeline}: three boards registered on Stack4Things/IoTronic, each paired with a C++ worker, orchestrated by a satellite service that authenticates against Keystone and dispatches work through the WAMP/Crossbar bus to the Lightning-Rod agent of each board, which in turn invokes the worker via gRPC. This environment is slower and less controllable than the isolated benchmark, but it is the only one that measures the real cost of the platform's multi-protocol communication, and it is the one used for the three-stage pipeline model discussed in the communication section.
+
+Hardware environment common to both: Intel Core i7-12700H, 14 physical cores and 20 logical threads, 32\,GiB of RAM. This figure, 20 logical threads, is the threshold beyond which an experimental configuration enters oversubscription, and it is referenced repeatedly in the following sections.
+
+\newpage
+% =====================================================
+\section*{2. Problem rationale}
+
+Signature verification is independent across the iterations of a given batch, which makes it a workload suited to both data and task parallelism: there is no data-to-data dependency to manage, except in the pipeline model, where by construction the output of one stage becomes the input of the next. The reference sequential solution is a single call to \texttt{ECDSA\_verify} (OpenSSL) per signature, executed on one thread; its time is the denominator $T_1$ used for every speedup calculated in this report.
+
+The choice of ECDSA on curve P-256 rests on the following reasons: RSA at 2048 or 3072 bits would offer a cheaper single verification, but much larger keys and signatures, a cost that weighs on bandwidth-limited IoT devices. EdDSA with curve Ed25519, at the same security level, offers native batch verification, which aggregates multiple signatures into a single multi-scalar product instead of $N$ independent verifications, a direct advantage when the volume of verifications is the declared bottleneck of this system. Batch verification schemes also exist for ECDSA, but they are not a ready-made primitive in OpenSSL and are more complex to implement correctly. Despite this, ECDSA on P-256 remains a defensible choice: it is a system library already present on any Linux distribution for embedded devices, P-256 is the most widely used NIST curve for interoperability, and the profiling in the next section confirms that the observed computational cost is in any case dominated by the same class of operations for which a margin of improvement exists through parallelization.
+
+% =====================================================
+\section*{3. Decomposition and partitioning}
+
+\subsection*{3.1 Profiling}
+
+Before deciding what to parallelize, the sequential code was profiled. The first attempt, with \texttt{gprof} on a binary compiled with \texttt{-pg}, produces an empty profile: \texttt{gprof} only instruments code compiled with that flag, while the real cost of signature verification is almost entirely inside \texttt{libcrypto.so}, a dynamic system library that was never recompiled. Profiling was therefore redone with Valgrind and Callgrind, which work at the level of executed machine instructions and do not depend on how the binary was compiled, also installing OpenSSL's debug symbols to resolve the internal functions of the elliptic-curve backend instead of seeing them as anonymous addresses.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{lr}
+\toprule
+\textbf{Function / region} & \textbf{\% instructions} \\
+\midrule
+\texttt{\_\_ecp\_nistz256\_mul\_montq} & 32.71\% \\
+\texttt{\_\_ecp\_nistz256\_sqr\_montq} & 19.97\% \\
+Other EC primitives & 14.48\% \\
+\texttt{point\_double} + AVX2 & 7.71\% \\
+BIGNUM (\texttt{BN\_uadd}, shift, div) & 7.10\% \\
+\texttt{ord\_sqr\_mont} & 5.91\% \\
+\midrule
+Total EC/BIGNUM & \textbf{87.88\%} \\
+Other cryptographic computation & 6.26\% \\
+\texttt{malloc}/\texttt{free} & 3.20\% \\
+Application code & 1.80\% \\
+\bottomrule
+\end{tabular}
+\caption{Flat profile, Valgrind/Callgrind, sequential baseline batch=500.}
+\end{table}
+
+\begin{figure}[H]
+
+\includegraphics[width=0.84\textwidth]{graphs/profile_breakdown.pdf}
+\caption{Flat profile breakdown.}
+\end{figure}
+
+The two most expensive functions, Montgomery modular multiplication and squaring, are the instructions with which OpenSSL builds scalar multiplication on the curve: ECDSA verification requires two scalar multiplications (to compute $u_1 G + u_2 Q$), and each of them decomposes into a sequence of point doublings and additions, each of which requires several modular multiplications and squarings. It is consistent that these two functions alone cover over half of the total time. The overall picture, over 94\% of the time spent in arbitrary-precision integer arithmetic, experimentally confirms that signature verification is the only component of the system worth parallelizing, and that the workload is not floating-point, which makes measuring the $F_c$ metric unnecessary.
+
+\subsection*{3.2 Decomposition models}
+
+Three distinct decomposition models were implemented for the signature-verification problem, all measured in the isolated benchmark environment.
+\begin{itemize}
+    \item The first is pure data parallelism with OpenMP: a single process, a batch of signatures statically divided among threads with \texttt{\#pragma omp parallel for}, no communication between iterations.
+    \item The second is task parallelism with MPI: the total batch is partitioned across ranks with a deterministic chunking scheme that explicitly handles the remainder of the division, each rank verifies its own portion independently, and the results are aggregated with \texttt{MPI\_Reduce}.
+    \item The third is task parallelism with gRPC dispatch, conceptually a Master-Worker scheme: the service orchestrating the work partitions the batch with the same chunking criterion used for MPI, but instead of launching MPI processes it dispatches the requests in parallel to independent worker containers, which may reside on different nodes of the network.
+\end{itemize}
+
+A fourth model is added to these three, qualitatively different: the three-stage pipeline of the production chain, where the computation is not a set of independent verifications but a sequence of dependent transformations, worker-1 followed by worker-2 followed by worker-3, with the output of each stage becoming the input of the next. It is the only one of the four models with a genuine data-to-data dependency, and for this reason it is measured on the real production pipeline instead of the isolated benchmark: its metric of interest is not how fast a batch is verified, but how much throughput gain is obtained by overlapping multiple independent requests in the same chain, discussed in the performance evaluation section.
+
+\newpage
+% =====================================================
+\section*{4. Communication}
+
+The two environments described in the introduction involve very different communication patterns. In the isolated benchmark, communication is reduced to dispatching requests and collecting results: there is no authentication, no intermediate messaging bus, only a direct gRPC call per node. In the production pipeline, on the other hand, each invocation crosses three protocols in sequence: a REST request authenticated against Keystone to obtain a token, a call to the IoTronic Conductor that routes it over the WAMP/Crossbar bus to the destination board's Lightning-Rod agent, and finally a gRPC call from the agent to the C++ worker that performs the actual computation. This longer chain exists because IoTronic has to manage devices that may sit behind NAT or have unstable connectivity, a problem that the isolated benchmark, where the workers are containers on the same Docker network, does not have.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{p{2.7cm}p{2.7cm}p{8cm}}
+\toprule
+\textbf{Model} & \textbf{Transport} & \textbf{Measured overhead} \\
+\midrule
+MPI+OpenMP & In-process shared memory & Not instrumented in this campaign (expected $<0.05$\,ms on 8 bytes) \\
+gRPC, 8 nodes & HTTP/2 over TCP & 9.40\,ms at batch=1,000 (50.5\% of the per-call time); 38.39\,ms at batch=5,000 (45.9\%) \\
+gRPC, 16 nodes & HTTP/2 over TCP & 6.93\,ms at batch=1,000 (54.3\%); 24.47\,ms at batch=5,000 (46.5\%) \\
+gRPC, 32 nodes & HTTP/2 over TCP, 32 concurrent channels & 9.93--11.44\,ms, between 75.5\% and 80.1\% of the per-call time \\
+Real pipeline ($k=3$) & REST + WAMP/Crossbar + gRPC & 210--250\,ms per stage, about 690\,ms total for a steady-state transit \\
+\bottomrule
+\end{tabular}
+\caption{Overhead by model.}
+\end{table}
+
+The \texttt{MPI\_Reduce} collective aggregates only two 8-byte scalars via intra-node shared memory: it was not timed in isolation in this campaign, and the expected value in the table is a reference figure, not a measurement.
+
+It is worth noting that the very first call to a freshly provisioned pipeline takes 5.78 seconds, against about 0.65 seconds at steady state in subsequent calls, a factor eight times slower. The cause is not a problem with the system itself, but the cost of startup: on first use, the satellite has to negotiate a new token with Keystone and open the WebSocket handshake with the WAMP bus, operations that subsequent calls do not repeat because the session stays open. It is a real operational cost, one that anyone using the platform for the first time after a restart would encounter, and it is for this reason kept separate from the steady-state communication cost reported in the table.
+
+% =====================================================
+\section*{5. Aggregation}
+
+The three task-parallelism models aggregate partial results in different ways, consistent with their communication substrate. In the MPI model, aggregation happens through two collective reductions: \texttt{MPI\_SUM} on the total count of verified signatures, and \texttt{MPI\_MAX} on execution time, because the slowest rank determines when the job as a whole can be considered complete. In the gRPC dispatch, aggregation is asynchronous on the client side: the service that dispatched the requests waits for all of them to return with \texttt{asyncio.gather}, then sums the partial counts and checks that the total matches exactly the expected batch size; if the sum does not match, the program halts execution by raising an exception instead of proceeding with an incomplete count, a choice designed to make any data loss during concurrent dispatch immediately visible. In both cases the perceived overall time is $T_{tot} = \max_i(T_i)$, not the sum of the individual times, a detail that turns out to be useful for correctly interpreting both the deviation from Amdahl's law and the pipeline's behavior discussed later.
+
+The third aggregation mechanism, that of the pipeline, is conceptually different from the other two: it does not combine independent results, but chains dependent states. The numeric output and the trace record produced by one stage are directly the input of the next stage, so there is no real final \textit{aggregation} step; the result simply emerges from the sequential traversal of the chain.
+
+% =====================================================
+\section*{6. Mapping}
+
+In the MPI model, processes are launched with the \texttt{--bind-to none} option: Open MPI's default behaviour would bind each rank to a single physical core, which would prevent that rank's internal OpenMP threads from spreading across different cores and would force them to serialize, wasting part of the gain from the task+data hybrid discussed later. In the isolated benchmark, up to 32 \textit{worker} containers are mapped to as many dedicated host ports, in the range 51051--51082, so that each is individually reachable without addressing ambiguity. In the production pipeline, on the other hand, the mapping is static and fixed: the three boards registered on IoTronic correspond one to one to the three C++ workers connected on the \texttt{s4t-bridge} network, with no form of dynamic load balancing, a choice consistent with the fact that this environment is meant to measure the behaviour of the real chain as it is configured in production, not to explore alternative configurations.
+
+% =====================================================
+\section*{7. Performance evaluation}
+
+The reference metrics are speedup $S_n = T_1/T_n$ and efficiency $E_n = S_n/n$, computed both with respect to the number of nodes and with respect to the effective parallelism $P_{eff} = \text{nodes} \times \text{threads}$, to separate the contribution of task parallelism from that of data parallelism when the two are combined.
+
+\subsection*{7.1 Extended task parallelism: gRPC vs.\ MPI+OpenMP}
+
+In the isolated benchmark, the experimental grid covers nodes in $\{1,2,4,8,16,32\}$, OpenMP threads per node in $\{1,2,4,8\}$, two batch sizes (1,000 and 5,000 signatures), three repetitions per configuration, with a correctness check on the total count for each of the 96 runs per substrate.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.74\textwidth]{graphs/substrate_comparison_throughput_batch5000.pdf}
+\caption{Maximum throughput per $P_{eff}$, gRPC vs.\ MPI+OpenMP (batch=5,000).}
+\end{figure}
+
+The two efficiency curves are comparable at equal effective parallelism, but the absolute throughput is not: MPI reaches an asymptote close to 164,000 signatures per second, against about 87,000 for gRPC dispatch. The difference is entirely explained by the communication cost of the substrate discussed in the previous section: MPI communicates through shared memory within the same host, gRPC pays the real cost of HTTP/2 framing and of traversing the network stack, even when the containers are on the same machine. It is the trade-off between tight and loose coupling: same algorithmic efficiency, different communication substrates, different price.
+
+\subsection*{7.2 Amdahl's law}
+
+The serial fraction $f_s = 2/S_2 - 1$ had been estimated in a previous calibration campaign at 2.51\%, from just two measurements at low parallelism. It was not recalculated in this campaign: the equivalent configuration on the new grid, two nodes with a 5,000-signature batch over three repetitions, shows a standard deviation of 21\% on the mean, too noisy a sample to support a reliable two-point estimate. It was therefore decided to reuse the value already validated.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{crrr}
+\toprule
+$P$ & Predicted & Measured & Gap \\
+\midrule
+4 (calibration) & 3.72$\times$ & 3.73$\times$ & 0.3\% \\
+8 & 6.8$\times$ & 4.26$\times$ & 37\% \\
+16 & 11.6$\times$ & 7.71$\times$ & 34\% \\
+32 & 18.0$\times$ & 7.43$\times$ & 59\% \\
+\bottomrule
+\end{tabular}
+\caption{Amdahl predicted vs.\ measured (median, 10 repetitions, batch=5,000).}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\textwidth]{graphs/amdahl_predicted_vs_measured_extended.pdf}
+\caption{Divergence between ideal Amdahl and real data.}
+\end{figure}
+
+The result at $P=4$ confirms that the model is a good local predictor, with a gap under 1\%. As $P$ grows, however, the prediction drifts further and further from the real data, up to overestimating speedup by almost 60\% at 32 nodes. This does not mean that Amdahl's law is wrong, but that its simplest form assumes a constant coordination overhead, while in the measured system that overhead grows with the number of active concurrent channels, an effect quantified in the following section.
+
+\subsection*{7.3 Overhead breakdown and saturation}
+
+To understand where the gap just described comes from, every RPC call in the 8, 16 and 32-node configurations was broken down, over ten independent repetitions per configuration, into effective C++ compute time and network overhead time. The result is that the useful compute time per worker naturally decreases as the number of nodes increases, from 13.06 to 2.84 milliseconds as the chunk per worker shrinks, while the coordination overhead stays roughly constant in absolute terms, between 11.44 and 31.88 milliseconds. The ratio between the two flips: at 32 nodes the overhead comes to cover between 71\% and 80\% of the total per-call time, against about 50\% at 8 nodes.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\textwidth]{graphs/overhead_decomposition_stacked.pdf}
+\caption{Compute vs.\ network overhead per RPC call, 12 configurations.}
+\end{figure}
+
+Combined with the straggler effect, that is, the fact that the total time of a batch dispatched in parallel is determined by the slowest channel and not by the average, this sets an empirically observed throughput asymptote between 80,000 and 87,000 signatures per second, beyond which adding more nodes yields no further net gain: it is exactly the asymptote already visible in the substrate-comparison chart in the previous section.
+
+\subsection*{7.4 Scalability $L$}
+
+Scalability $L(P) = E(P,n_2)/E(P,n_1)$, computed by comparing efficiency at batches of 1,000 and 5,000 signatures, is systematically greater than one: at equal node count, the efficiency measured at the larger batch is higher than at the smaller one. It is the same explanation from the previous section seen from another angle: a larger batch gives each worker more useful work over which to amortize the same fixed network overhead, so the system scales better when the problem is bigger.
+
+\subsection*{7.5 Pipelining on the real chain}
+
+The pipelining formula, $S(n,k) = nk/(k+n-1)$ with $k=3$ stages, was compared against the speedup measured by dispatching $n$ independent requests sequentially and concurrently through the real production pipeline described in the introduction, for $n \in \{1,2,4,8\}$, five repetitions per value.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{crrrr}
+\toprule
+$n$ & $T_{seq}$ & $T_{conc}$ & Measured & Predicted (gap) \\
+\midrule
+1 & 0.631\,s & 0.645\,s & 0.98$\times$ & 1.00$\times$ (2.2\%) \\
+2 & 1.386\,s & 0.997\,s & 1.39$\times$ & 1.50$\times$ (7.3\%) \\
+4 & 2.635\,s & 1.999\,s & 1.32$\times$ & 2.00$\times$ (34.1\%) \\
+8 & 5.584\,s & 3.532\,s & 1.58$\times$ & 2.40$\times$ (34.1\%) \\
+\bottomrule
+\end{tabular}
+\caption{Pipelining: predicted vs.\ measured.}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\textwidth]{graphs/pipeline_speedup_predicted_vs_measured.pdf}
+\caption{Pipelining speedup, predicted vs.\ measured.}
+\end{figure}
+
+The most interesting fact in this table is that the gap between predicted and measured is identical to the decimal point at $n=4$ and $n=8$, 34.1\% in both cases even looking at the unrounded raw values. This is not a coincidence: past the threshold of four simultaneous requests, the chain hits an intrinsic bottleneck in the WAMP queue of the first board's Lightning-Rod stage, which queues incoming requests instead of truly parallelizing them, a phenomenon known as head-of-line blocking. From that point on, adding further concurrent requests does not bring the system any closer to the ideal curve, but the gain over the sequential case remains real and measurable: eight executions go from 5.58 to 3.53 seconds, a 36\% reduction.
+
+\subsection*{7.6 $F_c$ omitted}
+
+$F_c$ is defined as the ratio between measured performance and peak floating-point hardware performance $F_e/F_h$. Profiling showed that ECDSA verification is dominated by integer arithmetic on the elliptic curve, not by floating-point operations, so applying $F_c$ to this workload would produce a number with no real meaning. Throughput in signatures per second, already used throughout this report, remains the correct domain metric for this type of computation.
+
+% =====================================================
+\section*{8. Conclusion}
+
+This work covers data parallelism and task parallelism in two independent substrates measured up to 32 nodes, an MPI+OpenMP hybrid aligned with the Lecture 11 case study, and a three-stage pipeline model on the platform's real production chain. Amdahl's law was validated at low parallelism and then put to the test at much higher parallelism, where its simple form stops holding for reasons that this work isolated numerically.
+
+\end{document}
