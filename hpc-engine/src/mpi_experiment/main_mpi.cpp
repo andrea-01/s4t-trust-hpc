@@ -107,22 +107,35 @@ int main(int argc, char** argv) {
         local_batch_size++;
     }
 
-    // Generate local devices using deterministic seed per rank
+    // 1. Generation Phase: Generate local devices using deterministic seed per rank
+    double t_gen_start = MPI_Wtime();
     unsigned int base_seed = 1000;
     auto local_devices = DeviceGenerator::generate_devices(local_batch_size, base_seed + static_cast<unsigned int>(rank));
+    double t_gen_local = MPI_Wtime() - t_gen_start;
 
     // Wait for all ranks to generate data so the timing reflects just the verification phase
     MPI_Barrier(MPI_COMM_WORLD);
 
-    // Run verification on local data using parallel function with OpenMP
+    // 2. Verification Phase: Run verification on local data using OpenMP
+    double t_verify_start = MPI_Wtime();
     BenchResult local_res = SignatureBench::run_parallel(local_devices, num_threads, local_devices.size());
+    double t_verify_local = MPI_Wtime() - t_verify_start;
 
-    // Reduce results
+    // 3. Reduction / Communication Phase: Collect counts and timings
+    double t_reduce_start = MPI_Wtime();
+
     size_t total_verified = 0;
     double max_time = 0.0;
+    double max_gen_time = 0.0;
+    double max_verify_time = 0.0;
 
     MPI_Reduce(&local_res.batch_size, &total_verified, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
     MPI_Reduce(&local_res.time_seconds, &max_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_gen_local, &max_gen_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Reduce(&t_verify_local, &max_verify_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+    double t_reduce_end = MPI_Wtime();
+    double reduce_time = t_reduce_end - t_reduce_start;
 
     if (rank == 0) {
         double global_throughput = (max_time > 0) ? (static_cast<double>(total_verified) / max_time) : 0.0;
@@ -132,21 +145,27 @@ int main(int argc, char** argv) {
         std::cout << "Total Devices: " << total_verified << "\n";
         std::cout << "Max Time (s): " << max_time << "\n";
         std::cout << "Global Throughput (sig/s): " << global_throughput << "\n";
+        std::cout << "Phase Breakdown (s): Gen=" << max_gen_time
+                  << " Verify=" << max_verify_time
+                  << " Reduce=" << reduce_time << "\n";
 
-        // Append to CSV
+        // Append to CSV (preserving existing columns in order, adding phase breakdown in coda)
         std::ofstream out(csv_file, std::ios::app);
         if (out) {
             // Write header if file is empty
             out.seekp(0, std::ios::end);
             if (out.tellp() == 0) {
-                out << "model,batch_size,mpi_ranks,omp_threads,time_seconds,throughput\n";
+                out << "model,batch_size,mpi_ranks,omp_threads,time_seconds,throughput,gen_time_seconds,verify_time_seconds,reduce_time_seconds\n";
             }
             out << "mpi+openmp,"
                 << total_verified << ","
                 << size << ","
                 << num_threads << ","
                 << max_time << ","
-                << global_throughput << "\n";
+                << global_throughput << ","
+                << max_gen_time << ","
+                << max_verify_time << ","
+                << reduce_time << "\n";
         } else {
             std::cerr << "Failed to write to " << csv_file << "\n";
         }
