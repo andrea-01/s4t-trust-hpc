@@ -45,7 +45,6 @@ htmlcov/
 .idea/
 .vscode/
 graphs/
-generate_report_graphs.py
 
 # Benchmark temporary & raw profiler artifacts
 hpc-engine/results/callgrind*
