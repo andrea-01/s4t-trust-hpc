@@ -615,15 +615,69 @@ Eseguito `lscpu --extended` e ispezione governor CPU:
 - **`hpc-engine/src/onboarding/signature_bench.cpp`**:
   - Riga 54: `#pragma omp parallel for reduction(+:valid_count)` $\to$ **NON possiede alcuna clausola `schedule`** (utilizza il default OpenMP, tipicamente statico).
 
+## Fase: M13 (Revisione Progetto HPC) — Stadio 13.2 (Codice e Nuove Varianti)
 
+**Data:** 2026-11-01  
+**Obiettivo:** Implementazione delle varianti task-based (OpenMP `taskloop` e MPI Master-Worker dinamico), refactoring binding e thread safety (`MPI_THREAD_FUNNELED`), strumentazione `MPI_Wtime` per fase, script di lancio parametrici e test unitari.
 
+### 1. Riepilogo Commit Atomici
+- `888797c`: `chore(hpc): move generate_report_graphs.py to benchmarks and track it` (Housekeeping: spostato in `hpc-engine/benchmarks/`, aggiornato `PROJECT_ROOT`, rimosso da `.gitignore`, tracciato, `graphs/` ignorato).
+- `57304a5`: `feat(hpc): initialize MPI with MPI_THREAD_FUNNELED and check provided level` (Inizializzazione con controllo esplicito su `provided >= MPI_THREAD_FUNNELED` e documentazione thread safety).
+- `145dd02`: `feat(hpc): instrument MPI per-phase timings with MPI_Wtime and export to CSV` (Misurazione separata con `MPI_Wtime` per generazione dati, verifica OpenMP e `MPI_Reduce`, colonne aggiunte in coda nel CSV).
+- `4f65b6d`: `feat(hpc): add schedule(runtime) to OpenMP loop with static default fallback` (Aggiunta clausola `schedule(runtime)` e fallback esplicito a `omp_sched_static` se `OMP_SCHEDULE` non impostata).
+- `968922e`: `feat(hpc): implement OpenMP taskloop parallel verification variant with CLI grainsize` (Nuova funzione `run_parallel_taskloop` con `#pragma omp taskloop` e `grainsize` parametrizzabile via CLI).
+- `6b6c84d`: `feat(hpc): implement dynamic master-worker MPI variant with parameterizable chunks` (Nuovo eseguibile `hpc_engine_mpi_dynamic`: Rank 0 coordinatore dinamico a richiesta, worker con multithreading OpenMP, chunking configurabile e cross-check `valid_count`).
+- `89bcae2`: `feat(hpc): add benchmark launch scripts with explicit binding and governor logging` (`launch_mpi_pure.sh`, `launch_hybrid.sh`, `launch_control.sh`, `launch_dynamic.sh` con binding core/thread, governor logging e supporto P-cores via `taskset -c 0-11`).
+- `e2dd57d`: `test(hpc): add test_taskloop and MpiDynamicCorrectness test targets with zero warnings` (Nuovi test per le varianti taskloop e MPI dinamico registrati in CTest, compilazione pulita `-Wall -Wextra` senza warning).
 
+### 2. Output dei Test Unitari ed End-to-End (CTest)
+Eseguito all'interno dell'ambiente di compilazione di riferimento (`hpc-engine-build`):
+```text
+Test project /app/build
+    Start 1: SignatureCorrectness
+1/4 Test #1: SignatureCorrectness .............   Passed    0.00 sec
+    Start 2: TaskloopCorrectness
+2/4 Test #2: TaskloopCorrectness ..............   Passed    0.03 sec
+    Start 3: WorkerCorrectness
+3/4 Test #3: WorkerCorrectness ................   Passed    0.52 sec
+    Start 4: MpiDynamicCorrectness
+4/4 Test #4: MpiDynamicCorrectness ............   Passed    0.51 sec
 
+100% tests passed, 0 tests failed out of 4
+Total Test time (real) = 1.06 sec
+```
 
+### 3. Confronto Minimo di Sanità (Senza interpretazione teorica dei numeri)
+Misure di verifica di sanità eseguite su batch da 5.000 firme:
 
+#### A. OpenMP: `parallel for` vs `taskloop` (Batch 5.000, 4 Threads)
+- **`parallel for` (default static)**:
+  - Tempo: `0.0830167 s`
+  - Throughput: `60.228,8 sig/s`
+  - `valid_count`: 5000/5000 (100%)
+- **`taskloop` (grainsize = 100)**:
+  - Tempo: `0.0794946 s`
+  - Throughput: `62.897,3 sig/s`
+  - `valid_count`: 5000/5000 (100%)
 
+#### B. MPI: Statico (`hpc_engine_mpi`) vs Master-Worker Dinamico (`hpc_engine_mpi_dynamic`) (Batch 5.000, 4 Ranks, 1 Thread, P-cores 0-11)
+- **MPI Statico (4 Rank calcolatori)**:
+  - Tempo massimo: `0.0729711 s`
+  - Throughput globale: `68.520,3 sig/s`
+  - Decomposizione fasi: `Gen = 0.0540909 s`, `Verify = 0.0729757 s`, `Reduce = 0.00225934 s`
+  - `valid_count`: 5000/5000 (100%)
+- **MPI Master-Worker Dinamico (1 Master + 3 Worker, Chunk = 100)**:
+  - Tempo totale: `0.167464 s`
+  - Throughput globale: `29.857,1 sig/s`
+  - `valid_count`: 5000/5000 (100% Match)
 
-
-
-
+### 4. Definizione del Governor per lo Stadio Successivo (13.3)
+Tutte le CPU host si trovano attualmente su governor `powersave`. Per l'esecuzione della campagna formale dello Stadio 13.3 si raccomanda all'utente l'esecuzione (con privilegi sudo) di:
+```bash
+sudo cpupower frequency-set -g performance
+```
+oppure:
+```bash
+sudo bash -c 'for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do echo performance > "$g"; done'
+```
 
