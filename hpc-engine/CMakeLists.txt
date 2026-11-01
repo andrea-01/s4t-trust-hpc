@@ -48,6 +48,19 @@ target_link_libraries(test_signatures
 )
 add_test(NAME SignatureCorrectness COMMAND test_signatures)
 
+add_executable(test_taskloop 
+    tests/test_taskloop.cpp
+    src/onboarding/device_generator.cpp
+    src/onboarding/signature_bench.cpp
+)
+target_include_directories(test_taskloop PRIVATE src/onboarding)
+target_link_libraries(test_taskloop
+    PRIVATE OpenMP::OpenMP_CXX
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
+)
+add_test(NAME TaskloopCorrectness COMMAND test_taskloop)
+
 # --- gRPC per M6 ---
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GRPC REQUIRED grpc++)
@@ -134,5 +147,8 @@ target_link_libraries(hpc_engine_mpi_dynamic
     PRIVATE OpenMP::OpenMP_CXX
     PRIVATE OpenSSL::SSL
     PRIVATE OpenSSL::Crypto
+)
+add_test(NAME MpiDynamicCorrectness 
+    COMMAND mpirun --allow-run-as-root --bind-to none --oversubscribe -np 3 $<TARGET_FILE:hpc_engine_mpi_dynamic> 60 20 2 /tmp/test_mpi_dynamic_ctest.csv
 )
 
