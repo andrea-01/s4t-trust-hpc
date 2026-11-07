@@ -1,0 +1,23 @@
+# Environment Fingerprint Addendum — M13 Campaign (Stage 13.3)
+# Generated: 2026-11-07
+
+## 1. Git Commit Hash at Campaign Time
+- HEAD commit hash when E0-E8 raw CSVs were collected (2026-11-01 18:34:46 - 18:56:46):
+  Commit: 4f3522194a53a5e0de7b4b46f5e7edebdf846d39 ("fix(hpc): configure hwthread binding and robust asyncio handling for campaign runner")
+  Preceding fix commit included in build: f641a3962b08332da2054ff358e658e469504a9e ("fix(hpc): pre-generate dynamic MPI devices outside timed region and sync verify")
+
+- HEAD commit hash when E1b CSV was collected (2026-11-07 17:40:46 - 17:43:11):
+  Commit: 9f6681e592f69747fe05f56b509bc02aaec6d644 ("docs(hpc): document Stage 13.3-bis validation findings and binding analysis")
+
+## 2. Binaries Integrity & SHA-256 Checksums
+Build timestamp on host filesystem: 2026-11-01 18:26:23 CET.
+The binaries were compiled inside the Docker build container (GCC 12.2.0, Open MPI 4.1.4, OpenSSL 3.0.15) immediately before the campaign started and were NOT recompiled or modified since.
+The SHA-256 checksums below are identical to those executed during both the 2026-11-01 campaign (E0, E1, E2, E3, E4, E5, E6, E8) and the 2026-11-07 run (E1b):
+
+da4f528dc66b598f5297da781283ee5fe4f04adc4164173daa9928549674cc69  build/hpc_engine_mpi
+2f6da737264d1b1fd97d8b31390456e00a766a376a360f1f72893054cb61e0b5  build/hpc_engine_mpi_dynamic
+5a6c693e14fe0025e0a3c99f255b2368977c81f3f621db9f0efa874752353f5a  build/hpc_engine_bench
+
+## 3. Execution Environment
+All MPI and OpenMP benchmarks were launched directly on host Linux 6.8.0-48-generic (Intel i7-12700H, 14 physical cores / 20 hwthreads, CPU governor 'performance').
+The gRPC benchmark (E4) executed its client on host and connected to 32 worker containers running on Docker engine 28.1.1 (Ubuntu 22.04 base).
