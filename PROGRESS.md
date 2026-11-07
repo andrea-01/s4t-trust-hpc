@@ -736,3 +736,32 @@ sudo bash -c 'for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
 - **Verifica Globale di Integrità:** Controllate tutte le 1.100 righe CSV generate in `hpc-engine/results/m13/`: ogni singolo record soddisfa rigorosamente `valid_count == 20000` (100% match, zero fallimenti).
 - **Esperimento E7 (Pipeline reale Stack4Things/IoTronic):** Esecuzione demandata come ultimo step facoltativo dopo preavviso e conferma dell'utente.
 
+### 5. Stadio 13.3-bis — Verifiche Rigorose sui Dati Raccolti
+- **A1. Verifica Governor:**
+  - *Stato attuale post-reboot del sistema:* `20 powersave` (il reboot del sistema del 2026-11-07 ha resettato il governor del driver `intel_pstate`).
+  - *Stato effettivo durante tutti i run sperimentali:* **`20 performance` al 100%**.
+  - *Prova documentale diretta:*
+    - `environment_fingerprint.txt`: `=== GOVERNOR === 20 performance`.
+    - Analisi aggregata su tutti i file in `results/m13/logs/*.log`: `grep -h -A 1 "CPU Governor:" *.log` riporta esattamente `458  20 performance` e zero occorrenze di `powersave`. Nessun run è stato eseguito sotto `powersave`.
+- **A2. Fingerprint e Coerenza d'Ambiente Runtime vs Build:**
+  - File `hpc-engine/results/m13/environment_fingerprint.txt` presente e completo di kernel, `lscpu`, versioni, commit hash, `OMP_*` e distinzione esplicita host vs container.
+  - Verifica librerie condivise runtime (`ldd build/hpc_engine_mpi` su host vs container di build `hpc-engine-build`):
+    - `libgomp1`: `14.2.0-4ubuntu2~24.04.1` (identico su host e container).
+    - `libopenmpi3t64`: `4.1.6-7ubuntu2` (identico su host e container).
+    - Zero discrepanze di versione o ABI tra ambiente di compilazione ed esecuzione.
+- **A3. Mappa di Binding Effettivo e Condivisione Core (SMT):**
+  - Tutti i run E2, E3, E8 sono stati lanciati con binding esplicito.
+  - *E2 (MPI puro):* I comandi utilizzano `--use-hwthread-cpus --bind-to core`. Per $R \le 14$, ogni rank occupa un core fisico intero. Per $R > 14$ (es. $R=16, 18, 20$), poiché i core fisici totali sono 14 (6 P-core con 2 hwt + 8 E-core con 1 hwt), i rank aggiuntivi vengono assegnati ciclicamente ai secondi thread hardware dei P-cores (core 0..5), condividendo il core fisico via SMT.
+  - *E3 (Ibrido MPI+OpenMP):* Con `--use-hwthread-cpus` e PE arbitrari, il binding corretto applicato è `--map-by slot:PE=T --bind-to hwthread`.
+    - *Fattorizzazioni con $T$ pari ($T=2, 4$):* nessun rank condivide core fisici con rank adiacenti (es. 4×2, 5×2, 6×2, 7×2, 8×2, 10×2, 4×4, 5×4). I thread OpenMP interni allo stesso rank saturano i due hwt dei P-cores assegnati.
+    - *Fattorizzazioni con $T$ dispari ($T=3, 5$):* poiché ciascun rank occupa 3 o 5 hwt e i P-core dispongono di 2 hwt, i confini dei blocchi cadono a cavallo dei core fisici, portando rank adiacenti a condividere un P-core fisico via SMT (es. in 4×3, Rank 0 e Rank 1 condividono il core 1, Rank 2 e Rank 3 condividono il core 4).
+    - *Controlli Unbound:* 4×4 e 8×2 con binding `none` confermati nei log con `MCW rank X is not bound (or bound to all available processors)`.
+- **A3b. Definizione di `time_seconds` per Modello e Confrontabilità con $T_1$:**
+  - *E0 (Sequenziale):* Solo tempo di verifica crittografica pura (EVP) su dataset pre-generato. Nessun overhead di generazione, IO o avvio processi.
+  - *E1, E5, E6 (OpenMP for, schedule, taskloop):* Solo tempo di verifica parallela OpenMP pura intra-processo. Perfettamente confrontabile con $T_1$.
+  - *E2, E3 (MPI puro e ibrido):* `time_seconds` è `max_time` dei worker per la sola verifica OpenMP (ridotto con `MPI_Reduce`). Esclude setup, generazione (`gen_s`), riduzione (`reduce_s`) e avvio processi. Pienamente confrontabile a livello di calcolo.
+  - *E4 (gRPC isolato):* `time_seconds` è il wall-clock end-to-end del client Python (include latenza RPC, serializzazione protobuf, rete TCP). La colonna `verify_s` riporta il tempo massimo di calcolo interno ai container (`max_worker_time`). Per lo speedup di puro calcolo va usato `verify_s`; per l'efficienza end-to-end di sistema si usa `time_seconds`.
+  - *E6 (MPI dinamico):* `time_seconds` è `max_worker_time` (tempo di calcolo firme + latenza dei messaggi MPI di richiesta chunk). Include l'overhead del protocollo (~100 µs).
+- **A4. Duplicazione Baseline T1:**
+  - `t1_baseline.csv` e `results_e0_sequential.csv` contengono identicamente gli stessi 10 run (`diff -u` vuoto). La differenza tra 1.090 run unici eseguiti e 1.100 righe totali validate è dovuta unicamente alla duplicazione intenzionale della baseline richiesta per standardizzazione.
+
