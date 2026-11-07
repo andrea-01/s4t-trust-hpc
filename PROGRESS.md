@@ -765,3 +765,111 @@ sudo bash -c 'for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
 - **A4. Duplicazione Baseline T1:**
   - `t1_baseline.csv` e `results_e0_sequential.csv` contengono identicamente gli stessi 10 run (`diff -u` vuoto). La differenza tra 1.090 run unici eseguiti e 1.100 righe totali validate è dovuta unicamente alla duplicazione intenzionale della baseline richiesta per standardizzazione.
 
+---
+
+## Stadio 13.4 — Analisi delle metriche e grafici di scalabilità
+
+### 1. Riepilogo Metodologico e Microbenchmark di Verifica (B0)
+- **Baseline $T_1$ Unica (E0):** Mediana = `1.103615 s` (IQR = `0.017572 s`, p25 = `1.090248 s`, p75 = `1.107820 s`), throughput `18.122,4 sig/s`.
+- **Microbenchmark Latenza Singola Firma ECDSA P-256 (`bench_single_verify`):**
+  - Eseguito su $N = 20.000$ firme sintetiche generate a priori con OpenSSL 3.0.15 e compilazione `-O2`.
+  - **Overhead del timer (`std::chrono::high_resolution_clock`):** `12.80 ns` (0.02% del tempo di verifica, trascurabile).
+  - **Latenza di verifica singola:**
+    - Media: `57.42 µs` ($\pm 7.27 µs$, CV = `12.66%`)
+    - Min: `50.79 µs`, p50 (Mediana): `55.71 µs`, p90: `59.73 µs`, p99: `87.44 µs`, Max: `269.32 µs`
+    - Throughput equivalente su 1 core: `17.416,1 sig/s` (perfetta coerenza con $T_1$).
+  - I dati campionati sono archiviati in `hpc-engine/results/m13/per_verify_cost.csv` e `per_verify_summary.csv`.
+
+### 2. Sintesi Numerica di Scalabilità ($S$, $E$, $e(p)$)
+Tutte le metriche sono calcolate tramite `compute_m13_metrics.py` su 10.000 ricampionamenti bootstrap al 95% di confidenza.
+
+| Modello | $p$ | Speedup $S(p)$ [95% CI] | Efficienza $E(p)$ | Karp-Flatt $e(p)$ | $T_p$ Mediano (s) | IQR $T_p$ (s) |
+|---|---|---|---|---|---|---|
+| **E1 OpenMP Unbound** | 1 | 1.04 [1.01, 1.07] | 1.04 | — | 1.0646 | 0.0210 |
+| | 2 | 2.02 [1.87, 2.06] | 1.01 | -0.0095 | 0.5466 | 0.0179 |
+| | 4 | 3.67 [3.53, 3.81] | 0.92 | 0.0304 | 0.3011 | 0.0165 |
+| | 6 | 4.45 [3.88, 4.92] | 0.74 | 0.0695 | 0.2478 | 0.0315 |
+| | 8 | 5.21 [5.05, 5.26] | 0.65 | 0.0764 | 0.2118 | 0.0044 |
+| | 12 | 6.61 [6.27, 6.69] | 0.55 | 0.0742 | 0.1671 | 0.0044 |
+| | 16 | 7.78 [7.48, 7.89] | 0.49 | 0.0705 | 0.1419 | 0.0054 |
+| | 20 | 8.10 [7.41, 8.88] | 0.41 | 0.0772 | 0.1362 | 0.0210 |
+| **E1b OpenMP Bound (`close`)** | 1 | 1.01 [0.99, 1.02] | 1.01 | — | 1.0905 | 0.0224 |
+| | 2 | 1.21 [1.19, 1.23] | 0.61 | 0.6523 | 0.9118 | 0.0238 |
+| | 4 | 2.21 [2.15, 2.32] | 0.55 | 0.2696 | 0.4990 | 0.0305 |
+| | 6 | 3.29 [3.18, 3.36] | 0.55 | 0.1642 | 0.3349 | 0.0123 |
+| | 8 | 4.30 [4.19, 4.39] | 0.54 | 0.1229 | 0.2566 | 0.0080 |
+| | 12 | 6.39 [6.28, 6.50] | 0.53 | 0.0797 | 0.1726 | 0.0035 |
+| | 16 | 7.54 [7.21, 7.64] | 0.47 | 0.0748 | 0.1463 | 0.0033 |
+| | 20 | 8.10 [7.60, 8.44] | 0.41 | 0.0773 | 0.1362 | 0.0118 |
+| **E2 MPI Pure (`core`)** | 1 | 1.04 [1.02, 1.05] | 1.04 | — | 1.0630 | 0.0177 |
+| | 2 | 1.24 [1.22, 1.25] | 0.62 | 0.6164 | 0.8919 | 0.0232 |
+| | 4 | 3.94 [3.83, 3.97] | 0.98 | 0.0054 | 0.2803 | 0.0049 |
+| | 6 | 5.55 [5.47, 5.59] | 0.93 | 0.0160 | 0.1987 | 0.0036 |
+| | 8 | 4.14 [4.03, 4.19] | 0.52 | 0.1329 | 0.2663 | 0.0081 |
+| | 12 | 5.79 [5.69, 5.83] | 0.48 | 0.0975 | 0.1906 | 0.0019 |
+| | 16 | 7.62 [7.18, 7.71] | 0.48 | 0.0734 | 0.1449 | 0.0020 |
+| | 20 | 9.27 [8.79, 9.68] | 0.46 | 0.0609 | 0.1190 | 0.0103 |
+| **E3 Hybrid MPI+OpenMP** | 8 | 4.68 [4.58, 4.72] | 0.58 | 0.1014 | 0.2359 | 0.0018 |
+| | 12 | 6.62 [6.51, 6.66] | 0.55 | 0.0738 | 0.1667 | 0.0010 |
+| | 16 | 8.14 [7.90, 8.20] | 0.51 | 0.0644 | 0.1356 | 0.0026 |
+| | 20 | 8.62 [7.11, 8.89] | 0.43 | 0.0695 | 0.1281 | 0.0252 |
+| **E4 gRPC Wall ($S_{wall}$)** | 1 | 0.59 [0.56, 0.60] | 0.59 | — | 1.8729 | 0.0990 |
+| | 2 | 1.18 [1.12, 1.19] | 0.59 | 0.6949 | 0.9353 | 0.0247 |
+| | 4 | 2.12 [1.72, 2.16] | 0.53 | 0.2969 | 0.5217 | 0.0705 |
+| | 8 | 2.90 [2.67, 2.96] | 0.36 | 0.2510 | 0.3804 | 0.0244 |
+| | 16 | 4.51 [4.28, 4.67] | 0.28 | 0.1697 | 0.2445 | 0.0129 |
+| | 20 | 4.72 [4.06, 5.02] | 0.24 | 0.1706 | 0.2340 | 0.0483 |
+| **E4 gRPC Compute ($S_{comp}$)** | 1 | 1.02 [0.99, 1.06] | 1.02 | — | 1.0788 | 0.0470 |
+| | 2 | 2.08 [1.97, 2.10] | 1.04 | — | 0.5307 | 0.0254 |
+| | 4 | 3.77 [3.69, 3.86] | 0.94 | — | 0.2930 | 0.0135 |
+| | 8 | 5.46 [5.03, 6.36] | 0.68 | — | 0.2020 | 0.0520 |
+| | 16 | 8.04 [7.77, 8.56] | 0.50 | — | 0.1373 | 0.0163 |
+| | 20 | 9.43 [8.26, 9.73] | 0.47 | — | 0.1170 | 0.0197 |
+| **E8 OpenMP P-cores** | 1 | 1.07 [1.05, 1.07] | 1.07 | — | 1.0353 | 0.0127 |
+| | 2 | 2.09 [2.05, 2.10] | 1.04 | -0.0416 | 0.5289 | 0.0093 |
+| | 4 | 3.93 [3.86, 3.95] | 0.98 | 0.0062 | 0.2811 | 0.0019 |
+| | 6 | 5.44 [5.15, 5.47] | 0.91 | 0.0206 | 0.2029 | 0.0095 |
+| | 8 | 5.25 [5.09, 5.34] | 0.66 | 0.0749 | 0.2102 | 0.0055 |
+| | 12 | 6.55 [6.25, 6.59] | 0.55 | 0.0756 | 0.1684 | 0.0011 |
+
+### 3. Frazione Seriale di Amdahl ($f_s$) e Proiezione su $p > 4$
+Fit non lineare ai minimi quadrati su $p \le 4$ con 10.000 campioni bootstrap per ricavare la stima di $f_s$ e la banda di confidenza al 95%:
+- **`omp_pure_pcores` (OpenMP su soli P-core):** $f_s = \mathbf{0.522\%}$ [95% CI: $0.260\% - 1.153\%$].
+  - Sulle sole unità fisiche omogenee, il codice crittografico dimostra una frazione seriale praticamente nulla ($\approx 0.5\%$), confermando che l'algoritmo di verifica è imbarazzantemente parallelo.
+- **`mpi_pure_pcores` (MPI su soli P-core):** $f_s = \mathbf{1.155\%}$ [95% CI: $0.873\% - 1.807\%$].
+- **`mpi_pure` (MPI all-cores):** $f_s = \mathbf{1.397\%}$ [95% CI: $1.086\% - 2.255\%$].
+- **`omp_pure` (OpenMP unbound):** $f_s = \mathbf{2.787\%}$ [95% CI: $1.690\% - 3.992\%$].
+- **`omp_pure_bound` (OpenMP `close`):** $f_s = \mathbf{31.671\%}$ [95% CI: $29.618\% - 33.273\%$].
+  - *Nota metodologica:* L'anomalia di un $f_s$ elevato per `omp_pure_bound` è un artefatto del fit a $p \le 4$: la politica `close` alloca i primi due thread sullo stesso core fisico (SMT), deprimendo $S(2)$ a $1.21$ e simulando matematicamente un collo di bottiglia seriale che in realtà è contesa d'hardware execution units.
+
+### 4. Distinzione Statistica delle Distribuzioni di Latenza (IQR Disgiunti)
+Dall'analisi delle bande interquartili $[p_{25}, p_{75}]$ di $T_p$:
+- A $p=4$:
+  - `mpi_pure` ($[0.2792, 0.2841]\,\text{s}$) e `omp_pure_pcores` ($[0.2806, 0.2825]\,\text{s}$) sono statisticamente indistinguibili tra loro.
+  - Entrambi sono **nettamente disgiunti** da `omp_pure` unbound ($[0.2930, 0.3095]\,\text{s}$), `omp_pure_bound` ($[0.4777, 0.5082]\,\text{s}$) e `grpc_openmp` ($[0.5130, 0.5835]\,\text{s}$).
+- A $p=8$:
+  - `omp_pure_pcores` ($[0.2074, 0.2129]\,\text{s}$) e `omp_pure` ($[0.2104, 0.2148]\,\text{s}$) sono sovrapposti.
+  - Entrambi sono **nettamente più veloci e disgiunti** da `hybrid_mpi_omp` ($[0.2355, 0.2373]\,\text{s}$), `omp_pure_bound` ($[0.2525, 0.2605]\,\text{s}$) e `mpi_pure` ($[0.2640, 0.2721]\,\text{s}$).
+- A $p=16$:
+  - `hybrid_mpi_omp` ($[0.1352, 0.1378]\,\text{s}$) supera e distacca in modo statisticamente significativo `omp_pure` ($[0.1404, 0.1458]\,\text{s}$), `mpi_pure` ($[0.1435, 0.1455]\,\text{s}$) e `omp_pure_bound` ($[0.1451, 0.1484]\,\text{s}$).
+
+### 5. Anomalie Empiriche e Fenomeni Architetturali Rilevati
+1. **Contesa SMT a $p=2$ su Binding Stretto:** Con binding `threads_close` o `bind-to core`, i primi due thread logici condividono il Core 0 (P-core con Hyper-Threading), dimezzando il throughput potenziale ($E \approx 61\%$). OpenMP unbound evita naturalmente questo limite perché lo scheduler del kernel colloca i primi thread su core fisici distinti ($E = 1.01$).
+2. **Disparità E-cores e Sbilanciamento MPI a $p=8$:** In `mpi_pure`, a $p=6$ (tutti P-cores) l'efficienza è altissima ($E = 0.93$). A $p=8$, l'aggiunta di 2 E-cores fa crollare lo speedup da $5.55$ a $4.14$ ($E = 0.52$), perché il carico è equiripartito staticamente ($20.000 / 8 = 2.500$ firme per rank), e la barriera `MPI_Reduce` attende i rank più lenti allocati sugli E-cores a basso IPC/clock.
+3. **Efficacia dello Scheduling Dinamico su Alder Lake (E5):** A $T=16$, la clausola `dynamic,16` raggiunge `172.980 sig/s` (+19.5% rispetto a `static` a `144.684 sig/s`). La suddivisione in chunk compensa automaticamente la differenza di velocità di elaborazione tra P-cores ed E-cores.
+4. **Disaccoppiamento Compute vs Wall-Clock in gRPC (E4):** Il tempo di computazione all'interno dei container worker isolati ($S_{compute}$) scala in modo identico a MPI nativo ($S = 9.43$ a $p=20$). Tuttavia, la catena di rete, la serializzazione Protobuf e il dispatcher asincrono Python aggiungono una costante di circa `0.10–0.12 s` per richiesta, che impone un tetto rigido a $S_{wall} \le 4.72$ ($E_{wall} \le 24\%$).
+5. **Overhead di Messaggistica Master-Worker (E6):** Nel modello dinamico, l'overhead per richiesta di chunk è misurato in circa `100 µs`. Il throughput cresce proporzionalmente al numero di worker effettivi ($p = R - 1$).
+
+### 6. Catalogo Grafici Generati (`graphs/m13/`)
+Tutti i grafici sono stati generati tramite `hpc-engine/benchmarks/generate_m13_graphs.py` in doppio formato (vettoriale PDF e raster PNG a 300 dpi):
+- `fig_a_strong_scaling.{pdf,png}`: Strong scaling comparativo ($S$ vs $p$ fino a $p=20$) con bande verticali colorate per le regioni microarchitetturali di Alder Lake (P-cores 1-6, mix P/E 7-14, SMT 15-20).
+- `fig_b_parallel_efficiency.{pdf,png}`: Efficienza parallela $E(p)$ con soglie guida evidenziate a $E=0.8$ ed $E=0.5$.
+- `fig_c_karp_flatt.{pdf,png}`: Andamento della metrica di Karp-Flatt $e(p)$, che dimostra la crescita dell'overhead di sincronizzazione su scale elevate.
+- `fig_d_amdahl_fit.{pdf,png}`: Curve di Amdahl fittate su $p \le 4$ con bande di confidenza bootstrap al 95% e confronto con i punti osservati a $p > 4$.
+- `fig_e_hybrid_heatmap.{pdf,png}`: Griglia termica $R \times T$ del modello ibrido MPI+OpenMP, con marcatura esplicita delle combinazioni a $T$ dispari soggette a condivisione SMT tra rank.
+- `fig_f_grpc_vs_mpi.{pdf,png}`: Confronto sistematico tra nodi dedicati containerizzati gRPC ($S_{wall}$ e $S_{compute}$) e MPI puro, fino alla saturazione a $p=32$.
+- `fig_g_openmp_schedules.{pdf,png}`: Confronto orizzontale a barre delle 15 politiche di scheduling OpenMP a $T=16$ (static vs dynamic vs guided).
+- `fig_h_taskbased_scaling.{pdf,png}`: Confronto tra approccio task-based OpenMP (`taskloop`) e master-worker dinamico MPI (`mpi_dynamic`) su diversi chunk/grain size.
+- `fig_i_pcores_vs_all.{pdf,png}`: Isolamento dell'eterogeneità Alder Lake: confronto tra esecuzione limitata ai P-core (0-11) ed esecuzione su tutti i core.
+
+
