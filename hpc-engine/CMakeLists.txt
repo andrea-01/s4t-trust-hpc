@@ -152,3 +152,13 @@ add_test(NAME MpiDynamicCorrectness
     COMMAND mpirun --allow-run-as-root --bind-to none --oversubscribe -np 3 $<TARGET_FILE:hpc_engine_mpi_dynamic> 60 20 2 /tmp/test_mpi_dynamic_ctest.csv
 )
 
+add_executable(bench_single_verify
+    src/onboarding/bench_single_verify.cpp
+    src/onboarding/device_generator.cpp
+)
+target_include_directories(bench_single_verify PRIVATE src/onboarding)
+target_link_libraries(bench_single_verify
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
+)
+

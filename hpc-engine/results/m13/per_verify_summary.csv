@@ -1,0 +1,2 @@
+samples,timer_overhead_ns,mean_us,stddev_us,cv,min_us,p50_us,p90_us,p99_us,max_us
+20000,12.8008,57.4181,7.2672,0.126566,50.786,55.708,59.731,87.439,269.316
