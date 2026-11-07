@@ -238,6 +238,26 @@ def execute_task(task: Dict[str, Any], log_file: Path) -> Dict[str, Any]:
                 valid_count = int(row["valid_count"])
             verify_s = time_seconds
 
+        elif exp == "E1b":
+            bin_path = get_binary_path("hpc_engine_bench")
+            env["OMP_NUM_THREADS"] = str(threads)
+            env["OMP_PLACES"] = "threads"
+            env["OMP_PROC_BIND"] = "close"
+            cmd = [str(bin_path), str(batch), str(batch), str(threads), str(tmp_csv), "for"]
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            with open(log_file, "a") as f:
+                f.write(f"\n--- [E1b T={threads} Rep {task['rep']}] CMD: {' '.join(cmd)} (OMP_PLACES=threads OMP_PROC_BIND=close) ---\n")
+                f.write(proc.stdout + "\n" + proc.stderr + "\n")
+            if proc.returncode != 0:
+                raise RuntimeError(f"E1b execution failed:\n{proc.stderr}")
+            with open(tmp_csv, "r") as f:
+                reader = csv.DictReader(f)
+                row = next(reader)
+                time_seconds = float(row["time_seconds"])
+                throughput = float(row["throughput"])
+                valid_count = int(row["valid_count"])
+            verify_s = time_seconds
+
         elif exp == "E2":
             script = BENCH_DIR / "launch_mpi_pure.sh"
             cmd = [str(script), str(ranks), str(batch), str(tmp_csv)]
@@ -458,6 +478,23 @@ def generate_experiment_tasks(exp: str, batch: int, repeats: int) -> List[Dict[s
                     "schedule": "static"
                 })
 
+    elif exp == "E1b":
+        thread_list = [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+        for t in thread_list:
+            for rep in range(repeats):
+                tasks.append({
+                    "experiment": "E1b",
+                    "model": "omp_pure_bound",
+                    "ranks": 1,
+                    "threads": t,
+                    "p_eff": t,
+                    "batch": batch,
+                    "rep": rep,
+                    "binding": "threads_close",
+                    "cpuset": "all",
+                    "schedule": "static"
+                })
+
     elif exp == "E2":
         rank_list = [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 18, 20]
         for r in rank_list:
@@ -660,6 +697,8 @@ def run_experiment_campaign(
         csv_filename = "results_e0_sequential.csv"
     elif exp == "E1":
         csv_filename = "results_e1_omp_pure.csv"
+    elif exp == "E1b":
+        csv_filename = "results_e1b_omp_bound.csv"
     elif exp == "E2":
         csv_filename = "results_e2_mpi_pure.csv"
     elif exp == "E3":
@@ -775,7 +814,7 @@ def main():
     parser = argparse.ArgumentParser(description="M13 Experimental Campaign Driver")
     parser.add_argument(
         "--experiment", "-e",
-        choices=["E0", "E1", "E2", "E3", "E4", "E5", "E6", "E8", "E7", "ALL_CORE"],
+        choices=["E0", "E1", "E1b", "E2", "E3", "E4", "E5", "E6", "E8", "E7", "ALL_CORE"],
         default="ALL_CORE",
         help="Experiment to run (default: ALL_CORE = E0, E1, E2, E3, E5, E6, E8)"
     )
