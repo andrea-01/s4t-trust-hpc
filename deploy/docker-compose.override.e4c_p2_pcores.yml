@@ -1,0 +1,5 @@
+services:
+  bench-worker-1:
+    cpuset: "0"
+  bench-worker-2:
+    cpuset: "2"

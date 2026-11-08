@@ -1,0 +1,17 @@
+services:
+  bench-worker-1:
+    cpuset: "0"
+  bench-worker-2:
+    cpuset: "2"
+  bench-worker-3:
+    cpuset: "4"
+  bench-worker-4:
+    cpuset: "6"
+  bench-worker-5:
+    cpuset: "8"
+  bench-worker-6:
+    cpuset: "10"
+  bench-worker-7:
+    cpuset: "1"
+  bench-worker-8:
+    cpuset: "3"
