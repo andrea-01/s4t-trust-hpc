@@ -390,74 +390,213 @@ The hybrid implementation operates as follows:
 The nominal concurrency of a hybrid configuration is $P_{\mathrm{eff}} = R \times T$. Under dedicated physical core binding (E3b), $R \times T$ cores are assigned without hardware thread oversubscription.
 
 % =====================================================
-\section*{7. Performance evaluation}
+\section{Performance Evaluation}\label{sec:eval}
 
-The reference metrics are speedup $S_n = T_1/T_n$ and efficiency $E_n = S_n/n$, computed both with respect to the number of nodes and with respect to the effective parallelism $P_{eff} = \text{nodes} \times \text{threads}$, to separate the contribution of task parallelism from that of data parallelism when the two are combined.
+Performance is evaluated using the formal metrics of Speedup ($S$), Parallel Efficiency ($E$), and Karp-Flatt serialization metric ($e$). Workload metrics are evaluated against the verified single-thread baseline $T_1 = 1.0636$\,s ($N = 20{,}000$ signatures, median of 10 interleaved runs of E0b, $18{,}804.8$\,signatures/s):
+\begin{equation}
+S(p) = \frac{T_1}{T_p}, \qquad E(p) = \frac{S(p)}{p}, \qquad e(p) = \frac{\frac{1}{S(p)} - \frac{1}{p}}{1 - \frac{1}{p}}
+\end{equation}
+To benchmark performance against hardware capabilities, campaign E9b establishes empirical machine capacity limits normalized to the baseline single-thread rate ($v_1 = 18{,}804.8$\,signatures/s):
+\begin{itemize}[nosep]
+  \item \textbf{Static partition capacity} $C_{\mathrm{static}}(q) = \frac{q \cdot N}{T_{\max}(q) \cdot v_1}$: The maximum throughput achievable when a batch of $N$ signatures is partitioned into $q$ identical static chunks. If slow cores participate, $T_{\max}$ is governed by the slowest core while faster cores idle at the barrier.
+  \item \textbf{Ideal dynamic capacity} $C_{\mathrm{dyn}}(q) = \frac{1}{v_1} \sum_{i=1}^q \frac{N}{T_i}$: The throughput achievable under ideal dynamic load balancing, where each hardware unit continuously executes at its maximum individual rate without barrier idling.
+\end{itemize}
 
-\subsection*{7.1 Extended task parallelism: gRPC vs.\ MPI+OpenMP}
+\subsection{Speedup on Computing Elements ($p$)}\label{sec:eval_speedup}
 
-In the isolated benchmark, the experimental grid covers nodes in $\{1,2,4,8,16,32\}$, OpenMP threads per node in $\{1,2,4,8\}$, two batch sizes (1,000 and 5,000 signatures), three repetitions per configuration, with a correctness check on the total count for each of the 96 runs per substrate.
+Figure~\ref{fig:strong_scaling} displays strong scaling across execution models as a function of the number of computing elements $p$. Table~\ref{tab:speedup_summary} reports median speedups and efficiencies across key concurrencies.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.74\textwidth]{graphs/substrate_comparison_throughput_batch5000.pdf}
-\caption{Maximum throughput per $P_{eff}$, gRPC vs.\ MPI+OpenMP (batch=5,000).}
+\includegraphics[width=0.88\textwidth]{figures/fig_a_strong_scaling.pdf}
+\caption{Strong scaling speedup $S(p)$ on $N = 20{,}000$ signatures (10 repetitions per configuration, baseline $T_1 = 1.0636$\,s). Error bars denote 95\% bootstrap confidence intervals. Shaded zones represent P-cores ($p \le 6$), E-core addition ($7 \le p \le 14$), SMT addition ($15 \le p \le 20$), and oversubscription ($p > 20$). Curves $C_{\mathrm{static}}(p)$ and $C_{\mathrm{dyn}}(p)$ plot empirical capacity limits measured in E9b.}
+\label{fig:strong_scaling}
 \end{figure}
-
-The two efficiency curves are comparable at equal effective parallelism, but the absolute throughput is not: MPI reaches an asymptote close to 164,000 signatures per second, against about 87,000 for gRPC dispatch. The difference is entirely explained by the communication cost of the substrate discussed in the previous section: MPI communicates through shared memory within the same host, gRPC pays the real cost of HTTP/2 framing and of traversing the network stack, even when the containers are on the same machine. It is the trade-off between tight and loose coupling: same algorithmic efficiency, different communication substrates, different price.
-
-\subsection*{7.2 Amdahl's law}
-
-The serial fraction $f_s = 2/S_2 - 1$ had been estimated in a previous calibration campaign at 2.51\%, from just two measurements at low parallelism. It was not recalculated in this campaign: the equivalent configuration on the new grid, two nodes with a 5,000-signature batch over three repetitions, shows a standard deviation of 21\% on the mean, too noisy a sample to support a reliable two-point estimate. It was therefore decided to reuse the value already validated.
 
 \begin{table}[H]
 \centering\small
-\begin{tabular}{crrr}
+\begin{tabular}{rcccccccc}
 \toprule
-$P$ & Predicted & Measured & Gap \\
+& \multicolumn{2}{c}{\textbf{OpenMP close (E1c)}} & \multicolumn{2}{c}{\textbf{MPI pure (E2b)}} & \multicolumn{2}{c}{\textbf{Hybrid (E3/E3b)}} & \multicolumn{2}{c}{\textbf{gRPC isolated (E4)}} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
+$p$ & $S$ [IQR] & $E$ & $S$ [IQR] & $E$ & $S$ [IQR] & $E$ & $S_{\mathrm{wall}}$ [IQR] & $S_{\mathrm{compute}}$ [IQR] \\
 \midrule
-4 (calibration) & 3.72$\times$ & 3.73$\times$ & 0.3\% \\
-8 & 6.8$\times$ & 4.26$\times$ & 37\% \\
-16 & 11.6$\times$ & 7.71$\times$ & 34\% \\
-32 & 18.0$\times$ & 7.43$\times$ & 59\% \\
+2  & 1.92 [1.86--1.97] & 0.96 & 1.93 [1.88--1.99] & 0.97 & 1.94 [1.90--1.98] & 0.97 & 1.05 [1.05--1.06] & 1.85 [1.84--1.86] \\
+4  & 3.56 [3.44--3.69] & 0.89 & 3.71 [3.58--3.75] & 0.93 & 3.65 [3.61--3.74] & 0.91 & 2.05 [2.00--2.09] & 3.66 [3.63--3.69] \\
+6  & 5.23 [5.07--5.27] & 0.87 & 5.32 [5.20--5.36] & 0.89 & 5.10 [5.05--5.18] & 0.85 & 2.28 [2.26--2.30] & 4.13 [4.08--4.20] \\
+8  & 3.77 [3.72--3.85] & 0.47 & 3.88 [3.76--3.99] & 0.48 & 4.02 [4.01--4.02] & 0.50 & 2.14 [2.12--2.16] & 3.77 [3.76--3.80] \\
+12 & 5.34 [5.14--5.42] & 0.45 & 5.49 [5.46--5.54] & 0.46 & 5.15 [5.14--5.16] & 0.43 & 2.90 [2.89--2.91] & 5.14 [5.13--5.15] \\
+16 & 6.68 [6.39--6.91] & 0.42 & 7.31 [6.49--7.43] & 0.46 & 7.02 [6.84--7.18] & 0.44 & 3.37 [3.35--3.38] & 6.26 [6.17--6.32] \\
+20 & 8.37 [8.07--8.48] & 0.42 & 8.81 [8.22--9.19] & 0.44 & 8.30 [7.95--8.48] & 0.42 & 4.54 [4.51--4.58] & 7.43 [7.39--7.46] \\
 \bottomrule
 \end{tabular}
-\caption{Amdahl predicted vs.\ measured (median, 10 repetitions, batch=5,000).}
+\caption{Speedup and parallel efficiency across concurrency paradigms for $p \in \{2, \dots, 20\}$.}
+\label{tab:speedup_summary}
 \end{table}
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.75\textwidth]{graphs/amdahl_predicted_vs_measured_extended.pdf}
-\caption{Divergence between ideal Amdahl and real data.}
-\end{figure}
+At $p \le 6$, execution scales linearly on the homogeneous P-cores: MPI reaches $S = 5.32$ ($E = 0.89$), and OpenMP reaches $S = 5.23$ ($E = 0.87$). 
+At $p = 7$, static partitioning introduces a pronounced performance cliff: the workload assigned to the 7th rank runs on an E-core, which is approximately $1.95\times$ slower than a P-core. In static MPI, all six P-core ranks finish their chunks early and idle at the reduction barrier, pulling speedup down to $S = 3.35$ at $p=7$ and $S = 3.88$ at $p=8$.
 
-The result at $P=4$ confirms that the model is a good local predictor, with a gap under 1\%. As $P$ grows, however, the prediction drifts further and further from the real data, up to overestimating speedup by almost 60\% at 32 nodes. This does not mean that Amdahl's law is wrong, but that its simplest form assumes a constant coordination overhead, while in the measured system that overhead grows with the number of active concurrent channels, an effect quantified in the following section.
-
-\subsection*{7.3 Overhead breakdown and saturation}
-
-To understand where the gap just described comes from, every RPC call in the 8, 16 and 32-node configurations was broken down, over ten independent repetitions per configuration, into effective C++ compute time and network overhead time. The result is that the useful compute time per worker naturally decreases as the number of nodes increases, from 13.06 to 2.84 milliseconds as the chunk per worker shrinks, while the coordination overhead stays roughly constant in absolute terms, between 11.44 and 31.88 milliseconds. The ratio between the two flips: at 32 nodes the overhead comes to cover between 71\% and 80\% of the total per-call time, against about 50\% at 8 nodes.
+Figure~\ref{fig:karp_flatt} tracks the Karp-Flatt metric $e(p)$.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=1\textwidth]{graphs/overhead_decomposition_stacked.pdf}
-\caption{Compute vs.\ network overhead per RPC call, 12 configurations.}
+\includegraphics[width=0.84\textwidth]{figures/fig_c_karp_flatt.pdf}
+\caption{Karp-Flatt metric $e(p)$ across concurrency models (10 repetitions, baseline $T_1 = 1.0636$\,s).}
+\label{fig:karp_flatt}
 \end{figure}
 
-Combined with the straggler effect, that is, the fact that the total time of a batch dispatched in parallel is determined by the slowest channel and not by the average, this sets an empirically observed throughput asymptote between 80,000 and 87,000 signatures per second, beyond which adding more nodes yields no further net gain: it is exactly the asymptote already visible in the substrate-comparison chart in the previous section.
+In the homogeneous region ($p \le 6$), $e(p)$ remains low and stable ($0.02 \le e(p) \le 0.04$), reflecting negligible algorithmic serialization. When $p$ crosses into the E-core region ($p \ge 7$), $e(p)$ jumps sharply to $0.15$. In classical homogeneous systems, such an increase signals serial bottlenecks or communication overhead; here, it is directly caused by core performance heterogeneity under static chunk partitioning.
 
-\subsection*{7.4 Scalability $L$}
+\subsection{Comparison at Equal Physical Cores ($R$)}\label{sec:eval_physical_cores}
 
-Scalability $L(P) = E(P,n_2)/E(P,n_1)$, computed by comparing efficiency at batches of 1,000 and 5,000 signatures, is systematically greater than one: at equal node count, the efficiency measured at the larger batch is higher than at the smaller one. It is the same explanation from the previous section seen from another angle: a larger batch gives each worker more useful work over which to amortize the same fixed network overhead, so the system scales better when the problem is bigger.
-
-\subsection*{7.5 Pipelining on the real chain}
-
-The pipelining formula, $S(n,k) = nk/(k+n-1)$ with $k=3$ stages, was compared against the speedup measured by dispatching $n$ independent requests sequentially and concurrently through the real production pipeline described in the introduction, for $n \in \{1,2,4,8\}$, five repetitions per value.
+Evaluating models as a function of allocated physical cores ($R \in [1, 14]$) accounts for coordinator overheads and thread layouts. Table~\ref{tab:equal_cores_comparison} compares static MPI (E2b), OpenMP close (E1c), static hybrid (E3b), dynamic master-worker (E6b), and dynamic hybrid (E10).
 
 \begin{table}[H]
 \centering\small
-\begin{tabular}{crrrr}
+\begin{tabular}{rcccccc}
 \toprule
-$n$ & $T_{seq}$ & $T_{conc}$ & Measured & Predicted (gap) \\
+\textbf{Cores} & \textbf{E2b Static} & \textbf{E1c Close} & \textbf{E3b Static} & \textbf{E6b Dyn ($T=1$)} & \textbf{E10 Dyn Hybrid} & \textbf{Verdict (E6b vs E2b)} \\
+$R$ & $S$ [IQR] & $S$ [IQR] & $S$ [IQR] & $S$ [IQR] ($c=25$) & $S$ [IQR] & \\
+\midrule
+3  & 2.81 [2.71--2.86] & 2.76 [2.68--2.85] & --- & 1.93 [1.92--1.93] & --- & E6b loses ($-31.4\%$) \\
+4  & 3.71 [3.58--3.75] & 3.56 [3.44--3.69] & --- & 2.87 [2.83--2.88] & --- & E6b loses ($-22.6\%$) \\
+5  & 4.45 [4.38--4.47] & 4.38 [4.35--4.40] & --- & 3.60 [3.58--3.60] & --- & E6b loses ($-19.1\%$) \\
+6  & 5.32 [5.20--5.36] & 5.23 [5.07--5.27] & --- & 4.49 [4.48--4.50] & --- & E6b loses ($-15.7\%$) \\
+7  & 3.35 [3.31--3.49] & 3.42 [3.38--3.46] & --- & 4.99 [4.97--5.00] & --- & E6b wins ($+48.9\%$) \\
+8  & 3.88 [3.76--3.99] & 3.77 [3.72--3.85] & 4.02 [4.01--4.02] & 5.49 [5.49--5.50] & 3.94 [3.86--4.28] & E6b wins ($+41.7\%$) \\
+9  & 4.23 [4.23--4.25] & 4.20 [4.15--4.24] & --- & 5.94 [5.93--5.96] & --- & E6b wins ($+40.4\%$) \\
+10 & 4.72 [4.71--4.73] & 4.69 [4.55--4.80] & 4.80 [4.78--4.86] & 6.37 [6.36--6.41] & 5.03 [4.62--5.15] & E6b wins ($+35.0\%$) \\
+12 & 5.49 [5.46--5.54] & 5.34 [5.14--5.42] & 5.15 [5.14--5.16] & 7.24 [7.23--7.26] & 5.68 [5.50--5.86] & E6b wins ($+32.0\%$) \\
+14 & 6.40 [6.16--6.51] & 5.86 [5.61--6.13] & 6.01 [5.99--6.47] & 8.15 [8.09--8.19] & 6.43 [6.14--6.50] & E6b wins ($+27.4\%$) \\
+\bottomrule
+\end{tabular}
+\caption{Speedup comparison indexed by allocated physical cores $R$. Verdicsts derived from IQR overlap.}
+\label{tab:equal_cores_comparison}
+\end{table}
+
+Key observations emerge:
+\begin{enumerate}[nosep]
+  \item \textbf{Dynamic master-worker overhead on P-cores ($R \le 6$):} In the P-core cluster, dynamic scheduling underperforms static partitioning because Rank 0 coordinates work rather than verifying signatures. Speedup per allocated core ($S/R$) for E6b drops to $0.64$--$0.75$, compared to $0.89$--$0.98$ for static MPI.
+  \item \textbf{Dynamic recovery in heterogeneous execution ($R \ge 7$):} When E-cores join the pool, E6b outperforms static E2b (+48.9\% at $R=7$, +41.7\% at $R=8$, +35.0\% at $R=10$, +27.4\% at $R=14$). At $R=7$, E6b achieves $S = 4.99$, avoiding the barrier collapse of E2b ($S = 3.35$). However, because the coordinator occupies one core, E6b at $R=7$ remains slightly below static execution on 6 P-cores ($S = 5.32$).
+  \item \textbf{Hybrid performance:} Static hybrid (E3b) does not surpass pure MPI or OpenMP (IQRs overlap). Dynamic hybrid (E10) is systematically slower than single-threaded dynamic MPI (E6b) at all core counts because the master rank allocates $T$ idle cores (up to 25\% of the physical core budget).
+\end{enumerate}
+
+\subsection{OpenMP Scheduling and Task-Based Parallelism}\label{sec:eval_openmp_sched}
+
+Figure~\ref{fig:openmp_schedules} compares OpenMP loop scheduling clauses across chunk sizes at $T = 16$ (utilizing 6 P-cores, 8 E-cores, and 2 SMT threads).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth]{figures/fig_g_openmp_schedules.pdf}
+\caption{Throughput of 15 OpenMP scheduling clauses at $T = 16$ on $N = 20{,}000$ signatures (10 repetitions, E5).}
+\label{fig:openmp_schedules}
+\end{figure}
+
+Under \texttt{static} scheduling at $T = 16$, throughput is limited to $136.0$\,ksig/s ($S = 7.69$ [7.62--7.81]). In contrast, \texttt{dynamic,16} achieves $162.7$\,ksig/s ($S = 9.20$ [9.14--9.23]), a 19.6\% improvement. At $T = 20$, \texttt{dynamic,16} reaches $S = 9.89$ [9.75--9.91] compared to $S = 8.68$ [8.63--9.07] for \texttt{static} (+13.9\%). Dynamic dispatch mitigates core speed divergence by allowing P-cores to consume additional chunks while E-cores complete their initial assignments.
+
+Figure~\ref{fig:taskbased_scaling} examines \texttt{taskloop} execution under varying grain sizes compared to MPI master-worker.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth]{figures/fig_h_taskbased_scaling.pdf}
+\caption{Taskloop scaling across grain sizes vs.\ MPI master-worker (E6).}
+\label{fig:taskbased_scaling}
+\end{figure}
+
+Taskloop execution achieves optimal throughput with intermediate task granularities ($\text{grainsize} \in [50, 200]$), trading task creation overhead against load balancing granularity.
+
+\subsection{Machine Capacity and Capacity-Relative Efficiency}\label{sec:eval_capacity}
+
+Figure~\ref{fig:parallel_efficiency} plots parallel efficiency $E(p)$ alongside the machine capacity limits $C_{\mathrm{static}}(p)/p$ and $C_{\mathrm{dyn}}(p)/p$.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{figures/fig_b_parallel_efficiency.pdf}
+\caption{Parallel efficiency $E(p) = S(p)/p$ and empirical capacity bounds (10 repetitions, E9b baseline $T_1 = 1.0636$\,s).}
+\label{fig:parallel_efficiency}
+\end{figure}
+
+At $p = 20$, the empirical limits measured in E9b are:
+\begin{equation}
+C_{\mathrm{static}}(20) = 8.74, \qquad C_{\mathrm{dyn}}(20) = 10.20
+\end{equation}
+When evaluated against the static capacity limit, static models saturate the available machine throughput:
+\begin{itemize}[nosep]
+  \item MPI pure static (E2b, $S = 8.81$ [8.22--9.19]) achieves $E_{\mathrm{cap\_static}} = 100.8\%$ [94.1--105.2]\%, which is equal to static capacity within experimental uncertainty.
+  \item OpenMP static ($S = 8.68$ [8.53--9.14]) achieves $E_{\mathrm{cap\_static}} = 99.4\%$ [97.6--104.6]\%, also equal within experimental uncertainty.
+  \item OpenMP \texttt{dynamic,16} ($S = 9.89$ [9.75--9.91]) extracts $97.0\%$ [95.6--97.1]\% of the ideal dynamic capacity $C_{\mathrm{dyn}}(20)$.
+\end{itemize}
+
+\subsection{Amdahl's Law and Serial Fraction}\label{sec:eval_amdahl}
+
+Figure~\ref{fig:amdahl_fit} shows the Amdahl projection fitted on static MPI (E2b) for $p \le 4$.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.84\textwidth]{figures/fig_d_amdahl_fit.pdf}
+\caption{Amdahl model fitted on $p \le 4$ with 95\% bootstrap confidence band vs.\ observed speedups (E2b and E1).}
+\label{fig:amdahl_fit}
+\end{figure}
+
+The estimated serial fraction on $p \le 4$ is $f_s = 2.80\%$ [95\% bootstrap CI: $2.33\%,\; 4.01\%$]. This parameter captures early scalability loss on the homogeneous P-cores.
+The model predicts speedup accurately at $p = 6$: predicted $S = 5.26\times$ vs.\ measured $S = 5.32\times$ (1.1\% discrepancy). Beyond $p = 6$, measured speedups diverge from the Amdahl curve. This deviation is consistent with the empirical capacity curve $C_{\mathrm{dyn}}(p)$ of the heterogeneous processor, rather than an increase in algorithmic serial code.
+
+\subsection{gRPC Isolated Benchmark and Latency Breakdown}\label{sec:eval_grpc}
+
+Figure~\ref{fig:grpc_vs_mpi} contrasts gRPC end-to-end wall-clock speedup ($S_{\mathrm{wall}}$) and worker compute speedup ($S_{\mathrm{compute}}$) against native MPI.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.84\textwidth]{figures/fig_f_grpc_vs_mpi.pdf}
+\caption{Throughput scaling: native MPI pure vs.\ gRPC worker compute and end-to-end wall-clock (E4).}
+\label{fig:grpc_vs_mpi}
+\end{figure}
+
+In the containerized gRPC benchmark, the total elapsed time decomposes into:
+\begin{equation}
+T_{\mathrm{wall}} = T_{\mathrm{verify}} + Gen(chunk) + Ping + \text{Residual}
+\end{equation}
+Worker verification ($T_{\mathrm{verify}}$) scales in close alignment with MPI compute time ($S_{\mathrm{compute}} = 7.43$ at $p=20$). However, $T_{\mathrm{wall}}$ includes client-side dispatch and in-container device record generation.
+
+To isolate the sources of latency, campaign E4c pinned each worker container to an exclusive logical CPU (Table~\ref{tab:e4c_discriminant}).
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{lcp{3.4cm}cccc}
+\toprule
+\textbf{Config} & $p$ & \textbf{Assigned CPUs} & $T_{\mathrm{wall}}$ (s) & $T_{\mathrm{verify}}$ (s) & $Gen$ (s) [Method] & \textbf{Net Res.} \\
+\midrule
+\texttt{p2\_pcores} & 2 & $\{0, 2\}$ (Distinct P) & 1.0086 & 0.5740 & 0.3850 [measured] & 48.3\,ms \\
+\texttt{p2\_smt}    & 2 & $\{0, 1\}$ (Same P, SMT) & 1.5525 & 0.9072 & 0.6150 [estimated] & 29.2\,ms \\
+\texttt{p6\_pcores} & 6 & $\{0, 2, 4, 6, 8, 10\}$ & 0.4659 & 0.2573 & 0.1284 [estimated] & 79.0\,ms \\
+\texttt{p8\_ecores} & 8 & 6P + 2E $\{12, 14\}$ & 0.4979 & 0.2822 & 0.1875 [estimated] & 26.9\,ms \\
+\texttt{p8\_smt}    & 8 & 6P + 2SMT $\{1, 3\}$ & 0.4240 & 0.2455 & 0.1537 [estimated] & 23.5\,ms \\
+\texttt{p12\_ecores}& 12& 6P + 6E $\{12..17\}$ & 0.3662 & 0.2071 & 0.1250 [estimated] & 33.0\,ms \\
+\texttt{p14\_ecores}& 14& 6P + 8E $\{12..19\}$ & 0.3164 & 0.1772 & 0.1072 [estimated] & 30.8\,ms \\
+\bottomrule
+\end{tabular}
+\caption{Discriminative container pinning experiment (E4c). Net residual reflects $T_{\mathrm{wall}} - T_{\mathrm{verify}} - Gen - Ping$.}
+\label{tab:e4c_discriminant}
+\end{table}
+
+The findings confirm:
+\begin{itemize}[nosep]
+  \item When containers are pinned to exclusive logical CPUs, the net infrastructure residual drops from $\approx 75$\,ms (unpinned E4 at $p=8$) to $\approx 25$\,ms (23.5--26.9\,ms at $p=8$, and 30.8--33.0\,ms at $p \ge 12$).
+  \item At $p=8$, assigning two containers to SMT threads on P-cores (\texttt{p8\_smt}) is faster than assigning them to E-cores (\texttt{p8\_ecores}, $T_{\mathrm{wall}} = 0.424$\,s vs.\ $0.498$\,s), with non-overlapping IQRs.
+  \item The net residual at $p=6$ (79.0\,ms) remains unexplained by core type. A control run measuring 6 concurrent generation processes yielded $41.61\,\mu$s/device (compared to $38.5\,\mu$s isolated), corresponding to a net residual of 68.7\,ms.
+  \item \textbf{Resolution of M11.5 throughput asymptote:} In the earlier M11.5 campaign, an asymptote at $\approx 87{,}000$\,signatures/s was attributed to HTTP/2 framing and network stack overhead. The M13 measurements reveal that the RPC latency included synthetic device generation on the worker. The actual network and serialization overhead is confined to 23--33\,ms.
+\end{itemize}
+
+\subsection{Pipeline Model on Production Chain}\label{sec:eval_pipeline}
+
+The three-stage production pipeline was evaluated under concurrent requests $n \in \{1, 2, 4, 8\}$ across 5 repetitions in the M11.5 campaign (Table~\ref{tab:pipeline_perf} and Figure~\ref{fig:pipeline_speedup}).
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{crrrc}
+\toprule
+$n$ & $T_{\mathrm{seq}}$ & $T_{\mathrm{conc}}$ & Measured Speedup & Theoretical $S(n,3)$ [Gap] \\
 \midrule
 1 & 0.631\,s & 0.645\,s & 0.98$\times$ & 1.00$\times$ (2.2\%) \\
 2 & 1.386\,s & 0.997\,s & 1.39$\times$ & 1.50$\times$ (7.3\%) \\
@@ -465,24 +604,45 @@ $n$ & $T_{seq}$ & $T_{conc}$ & Measured & Predicted (gap) \\
 8 & 5.584\,s & 3.532\,s & 1.58$\times$ & 2.40$\times$ (34.1\%) \\
 \bottomrule
 \end{tabular}
-\caption{Pipelining: predicted vs.\ measured.}
+\caption{Production pipeline speedup: sequential vs.\ concurrent dispatch ($k=3$ stages, M11.5).}
+\label{tab:pipeline_perf}
 \end{table}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.75\textwidth]{graphs/pipeline_speedup_predicted_vs_measured.pdf}
-\caption{Pipelining speedup, predicted vs.\ measured.}
+\includegraphics[width=0.75\textwidth]{figures/pipeline_speedup_predicted_vs_measured.pdf}
+\caption{Pipeline speedup vs.\ theoretical model $S(n,3) = 3n / (n+2)$.}
+\label{fig:pipeline_speedup}
 \end{figure}
 
-The most interesting fact in this table is that the gap between predicted and measured is identical to the decimal point at $n=4$ and $n=8$, 34.1\% in both cases even looking at the unrounded raw values. This is not a coincidence: past the threshold of four simultaneous requests, the chain hits an intrinsic bottleneck in the WAMP queue of the first board's Lightning-Rod stage, which queues incoming requests instead of truly parallelizing them, a phenomenon known as head-of-line blocking. From that point on, adding further concurrent requests does not bring the system any closer to the ideal curve, but the gain over the sequential case remains real and measurable: eight executions go from 5.58 to 3.53 seconds, a 36\% reduction.
+The gap between measured and theoretical speedup is 34.1\% at both $n=4$ and $n=8$. This equivalence arises algebraically from the ratio between measured speedups (1.32 and 1.58) and theoretical predictions (2.00 and 2.40). It does not indicate an empirical saturation threshold at $n=4$. The performance deficit is consistent with request queuing in the WAMP messaging layer, though this hypothesis was not instrumented in isolation. Pipelining nonetheless provides a 36.8\% runtime reduction at $n=8$ (from 5.584\,s to 3.532\,s).
 
-\subsection*{7.6 $F_c$ omitted}
+\subsection{Omission of the $F_c$ Metric}
 
-$F_c$ is defined as the ratio between measured performance and peak floating-point hardware performance $F_e/F_h$. Profiling showed that ECDSA verification is dominated by integer arithmetic on the elliptic curve, not by floating-point operations, so applying $F_c$ to this workload would produce a number with no real meaning. Throughput in signatures per second, already used throughout this report, remains the correct domain metric for this type of computation.
+The computational intensity metric $F_c = F_e / F_h$ evaluates the fraction of peak floating-point throughput achieved by an application. As demonstrated by the Callgrind profiling (Section~\ref{sec:profile}), ECDSA signature verification executes zero floating-point operations; over 94\% of instructions consist of integer modular arithmetic. Computing $F_c$ would yield an undefined or uninformative value. Throughput in verified signatures per second serves as the domain-appropriate metric.
 
 % =====================================================
-\section*{8. Conclusion}
+\section{Limitations}\label{sec:limits}
 
-This work covers data parallelism and task parallelism in two independent substrates measured up to 32 nodes, an MPI+OpenMP hybrid aligned with the Lecture 11 case study, and a three-stage pipeline model on the platform's real production chain. Amdahl's law was validated at low parallelism and then put to the test at much higher parallelism, where its simple form stops holding for reasons that this work isolated numerically.
+The experimental findings should be interpreted within the following boundaries:
+\begin{itemize}[nosep]
+  \item \textbf{Hardware architecture:} Experiments were conducted on a single Intel Core i7-12700H workstation with asymmetric core topologies (6 P-cores with SMT and 8 single-threaded E-cores). Results reflect heterogeneous multi-core dynamics rather than homogeneous HPC cluster nodes.
+  \item \textbf{Containerized environment:} Isolated benchmark containers ran on a single host sharing memory, kernel cgroups, and local network namespaces, rather than physically separated server nodes.
+  \item \textbf{Governor logging:} The CPU frequency governor was configured to \texttt{performance} across all 20 logical CPUs and verified for all 458 runs launched via \texttt{launch\_*.sh} and during system fingerprinting. However, direct binary executions of E0, E1, E5, and taskloop were verified via manual checks rather than individual per-run log entries.
+  \item \textbf{Environment fingerprint:} System reproducibility is anchored to the environment fingerprint recorded in M13.2 and its subsequent addendum.
+  \item \textbf{Production pipeline:} Campaign E7 on the live Stack4Things pipeline was not re-executed in M13 because external IoTronic services were offline; pipeline metrics are drawn from M11.5 with updated analytical framing.
+\end{itemize}
+
+% =====================================================
+\section{Conclusion}\label{sec:conclusion}
+
+This work evaluated task and data parallelism for ECDSA signature verification on heterogeneous multi-core hardware. 
+Key experimental conclusions include:
+\begin{enumerate}[nosep]
+  \item \textbf{Binding and mapping effects:} Missing core-level mapping flags caused severe SMT contention in early configurations ($S = 1.24$ at $p=2$); explicit core binding restored near-linear efficiency ($S = 1.93$, $E = 0.97$).
+  \item \textbf{Static vs.\ dynamic scheduling:} On homogeneous P-cores ($R \le 6$), static partitioning achieved maximum throughput because dynamic schemes incur coordinator core overhead. On heterogeneous cores ($R \ge 7$), dynamic scheduling mitigated barrier idling, outperforming static partitioning by up to 48.9\%.
+  \item \textbf{Machine capacity saturation:} Static MPI and OpenMP reached the empirical static capacity limit ($E_{\mathrm{cap\_static}} = 100.8\%$ and $99.4\%$), while OpenMP \texttt{dynamic,16} achieved $97.0\%$ of the ideal dynamic capacity.
+  \item \textbf{gRPC latency breakdown:} Deducting device generation revealed that net containerized RPC overhead is restricted to 23--33\,ms.
+\end{enumerate}
 
 \end{document}
