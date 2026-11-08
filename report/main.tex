@@ -179,94 +179,113 @@ Application logic & 1.80\% \\
 Montgomery modular multiplication and squaring constitute 52.68\% of all executed instructions. In total, 87.88\% of instructions reside in elliptic-curve point arithmetic and multiprecision integer operations. Application logic accounts for only 1.80\%. 
 This confirms that the execution time is governed by integer modular arithmetic, with negligible floating-point operations.
 
-\newpage
 % =====================================================
-\section*{2. Problem rationale}
+\section{Partitioning}\label{sec:partitioning}
 
-Signature verification is independent across the iterations of a given batch, which makes it a workload suited to both data and task parallelism: there is no data-to-data dependency to manage, except in the pipeline model, where by construction the output of one stage becomes the input of the next. The reference sequential solution is a single call to \texttt{ECDSA\_verify} (OpenSSL) per signature, executed on one thread; its time is the denominator $T_1$ used for every speedup calculated in this report.
+This section decomposes the signature verification problem into fine-grained tasks. The decomposition describes the structure of the computation independently of processes, threads, or communication protocols.
 
-The choice of ECDSA on curve P-256 rests on the following reasons: RSA at 2048 or 3072 bits would offer a cheaper single verification, but much larger keys and signatures, a cost that weighs on bandwidth-limited IoT devices. EdDSA with curve Ed25519, at the same security level, offers native batch verification, which aggregates multiple signatures into a single multi-scalar product instead of $N$ independent verifications, a direct advantage when the volume of verifications is the declared bottleneck of this system. Batch verification schemes also exist for ECDSA, but they are not a ready-made primitive in OpenSSL and are more complex to implement correctly. Despite this, ECDSA on P-256 remains a defensible choice: it is a system library already present on any Linux distribution for embedded devices, P-256 is the most widely used NIST curve for interoperability, and the profiling in the next section confirms that the observed computational cost is in any case dominated by the same class of operations for which a margin of improvement exists through parallelization.
+\subsection{Tasks and Data}
 
-% =====================================================
-\section*{3. Decomposition and partitioning}
+The computation is decomposed into two task types:
+\begin{itemize}[nosep]
+  \item \textbf{Verification task} $V_i$, for $i = 0, \dots, N-1$. Input: record $i$ (public key $Q$, message $m$, signature $(r,s)$). Output: binary decision $b_i \in \{0, 1\}$. Each $V_i$ executes Algorithm~\ref{alg:ecdsa_verify}.
+  \item \textbf{Reduction task} $\Sigma$. Input: the set of decisions $\{b_0, \dots, b_{N-1}\}$. Output: total valid signatures $\sum_{i=0}^{N-1} b_i$.
+\end{itemize}
+Because each $V_i$ applies the identical verification operation to a distinct data record, the strategy is a domain decomposition. In the M13 experiments, $N = 20{,}000$, which is orders of magnitude larger than the number of hardware processing elements ($p \le 20$).
 
-\subsection*{3.1 Profiling}
+\subsection{Task Dependency Graph}
 
-Before deciding what to parallelize, the sequential code was profiled. The first attempt, with \texttt{gprof} on a binary compiled with \texttt{-pg}, produces an empty profile: \texttt{gprof} only instruments code compiled with that flag, while the real cost of signature verification is almost entirely inside \texttt{libcrypto.so}, a dynamic system library that was never recompiled. Profiling was therefore redone with Valgrind and Callgrind, which work at the level of executed machine instructions and do not depend on how the binary was compiled, also installing OpenSSL's debug symbols to resolve the internal functions of the elliptic-curve backend instead of seeing them as anonymous addresses.
-
-\begin{table}[H]
-\centering\small
-\begin{tabular}{lr}
-\toprule
-\textbf{Function / region} & \textbf{\% instructions} \\
-\midrule
-\texttt{\_\_ecp\_nistz256\_mul\_montq} & 32.71\% \\
-\texttt{\_\_ecp\_nistz256\_sqr\_montq} & 19.97\% \\
-Other EC primitives & 14.48\% \\
-\texttt{point\_double} + AVX2 & 7.71\% \\
-BIGNUM (\texttt{BN\_uadd}, shift, div) & 7.10\% \\
-\texttt{ord\_sqr\_mont} & 5.91\% \\
-\midrule
-Total EC/BIGNUM & \textbf{87.88\%} \\
-Other cryptographic computation & 6.26\% \\
-\texttt{malloc}/\texttt{free} & 3.20\% \\
-Application code & 1.80\% \\
-\bottomrule
-\end{tabular}
-\caption{Flat profile, Valgrind/Callgrind, sequential baseline batch=500.}
-\end{table}
+Figure~\ref{fig:dep_graph} illustrates the task dependency graph.
 
 \begin{figure}[H]
-
-\includegraphics[width=0.84\textwidth]{graphs/profile_breakdown.pdf}
-\caption{Flat profile breakdown.}
+\centering
+\begin{tikzpicture}[every node/.style={font=\small},
+  t/.style={draw,circle,minimum size=0.85cm},
+  s/.style={draw,rounded corners,minimum width=1.4cm,minimum height=0.75cm},
+  arr/.style={-{Latex[length=2mm]},thick}]
+\foreach \i/\l in {0/{V_0},1/{V_1},2/{V_2},4/{V_{N-1}}} {
+  \node[t] (v\i) at (\i*1.5,0) {$\l$};
+}
+\node at (4.5,0) {$\cdots$};
+\node[s] (r) at (3,-1.8) {$\Sigma$};
+\foreach \i in {0,1,2,4} \draw[arr] (v\i)--(r);
+\end{tikzpicture}
+\caption{Task dependency graph for batch verification: $N$ concurrent tasks and one reduction. The critical path length is 2.}
+\label{fig:dep_graph}
 \end{figure}
 
-The two most expensive functions, Montgomery modular multiplication and squaring, are the instructions with which OpenSSL builds scalar multiplication on the curve: ECDSA verification requires two scalar multiplications (to compute $u_1 G + u_2 Q$), and each of them decomposes into a sequence of point doublings and additions, each of which requires several modular multiplications and squarings. It is consistent that these two functions alone cover over half of the total time. The overall picture, over 94\% of the time spent in arbitrary-precision integer arithmetic, experimentally confirms that signature verification is the only component of the system worth parallelizing, and that the workload is not floating-point, which makes measuring the $F_c$ metric unnecessary.
+The verification tasks are completely mutually independent. All dependency edges terminate at the reduction task $\Sigma$. Consequently, the maximum degree of concurrency is $N$, and the critical path consists of exactly one verification followed by the reduction.
 
-\subsection*{3.2 Decomposition models}
+\subsection{Task Interaction Graph}
 
-Three distinct decomposition models were implemented for the signature-verification problem, all measured in the isolated benchmark environment.
-\begin{itemize}
-    \item The first is pure data parallelism with OpenMP: a single process, a batch of signatures statically divided among threads with \texttt{\#pragma omp parallel for}, no communication between iterations.
-    \item The second is task parallelism with MPI: the total batch is partitioned across ranks with a deterministic chunking scheme that explicitly handles the remainder of the division, each rank verifies its own portion independently, and the results are aggregated with \texttt{MPI\_Reduce}.
-    \item The third is task parallelism with gRPC dispatch, conceptually a Master-Worker scheme: the service orchestrating the work partitions the batch with the same chunking criterion used for MPI, but instead of launching MPI processes it dispatches the requests in parallel to independent worker containers, which may reside on different nodes of the network.
-\end{itemize}
+Verification tasks do not exchange state during execution. The interaction graph contains no edges between any pair of verification tasks $(V_i, V_j)$. Interaction is confined to the fan-in to $\Sigma$, transferring one integer per group of tasks. Communication is therefore static, regular, and read-once.
 
-A fourth model is added to these three, qualitatively different: the three-stage pipeline of the production chain, where the computation is not a set of independent verifications but a sequence of dependent transformations, worker-1 followed by worker-2 followed by worker-3, with the output of each stage becoming the input of the next. It is the only one of the four models with a genuine data-to-data dependency, and for this reason it is measured on the real production pipeline instead of the isolated benchmark: its metric of interest is not how fast a batch is verified, but how much throughput gain is obtained by overlapping multiple independent requests in the same chain, discussed in the performance evaluation section.
+\subsection{A Second Workload: The Three-Stage Pipeline}
 
-\newpage
+The production platform incorporates a second workload characterized by functional pipelining: three sequential processing stages $S_1 \to S_2 \to S_3$, where the output of each stage feeds the next (Figure~\ref{fig:pipeline_graph}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small},
+  s/.style={draw,rounded corners,minimum width=1.6cm,minimum height=0.8cm},
+  arr/.style={-{Latex[length=2mm]},thick}]
+\node[s] (a) {$S_1$}; \node[s,right=1.4cm of a] (b) {$S_2$}; \node[s,right=1.4cm of b] (c) {$S_3$};
+\draw[arr] (a)--(b); \draw[arr] (b)--(c);
+\node[above=0.35cm of b,align=center] {Request $k$ traverses stages sequentially.\\Request $k{+}1$ enters $S_1$ as soon as $S_1$ becomes idle.};
+\end{tikzpicture}
+\caption{Dependency and interaction graph for the three-stage functional pipeline.}
+\label{fig:pipeline_graph}
+\end{figure}
+
+Unlike batch verification, the stages within a single request exhibit strict data dependencies and cannot run concurrently. Concurrency is achieved across multiple independent requests traversing the chain simultaneously.
+
 % =====================================================
-\section*{4. Communication}
+\section{Communication, Agglomeration, and Aggregation}
 
-The two environments described in the introduction involve very different communication patterns. In the isolated benchmark, communication is reduced to dispatching requests and collecting results: there is no authentication, no intermediate messaging bus, only a direct gRPC call per node. In the production pipeline, on the other hand, each invocation crosses three protocols in sequence: a REST request authenticated against Keystone to obtain a token, a call to the IoTronic Conductor that routes it over the WAMP/Crossbar bus to the destination board's Lightning-Rod agent, and finally a gRPC call from the agent to the C++ worker that performs the actual computation. This longer chain exists because IoTronic has to manage devices that may sit behind NAT or have unstable connectivity, a problem that the isolated benchmark, where the workers are containers on the same Docker network, does not have.
+\subsection{Data Movement and Substrate Overhead}
+
+In the batch workload, synthetic device records are generated deterministically from an integer seed directly on the computing node. No input dataset is transmitted across the network or memory bus; each worker receives only the seed, chunk size, and thread count. The return payload is limited to the partial valid count (an integer) and the elapsed execution time. Data movement is therefore restricted to a few bytes per chunk, independent of $N$.
+
+Table~\ref{tab:comm_overhead} summarizes the measured communication substrates and their operational overheads.
 
 \begin{table}[H]
 \centering\small
-\begin{tabular}{p{2.7cm}p{2.7cm}p{8cm}}
+\begin{tabular}{p{3.2cm}p{3.0cm}p{7.8cm}}
 \toprule
-\textbf{Model} & \textbf{Transport} & \textbf{Measured overhead} \\
+\textbf{Substrate} & \textbf{Transport Mechanism} & \textbf{Measured Communication Overhead} \\
 \midrule
-MPI+OpenMP & In-process shared memory & Not instrumented in this campaign (expected $<0.05$\,ms on 8 bytes) \\
-gRPC, 8 nodes & HTTP/2 over TCP & 9.40\,ms at batch=1,000 (50.5\% of the per-call time); 38.39\,ms at batch=5,000 (45.9\%) \\
-gRPC, 16 nodes & HTTP/2 over TCP & 6.93\,ms at batch=1,000 (54.3\%); 24.47\,ms at batch=5,000 (46.5\%) \\
-gRPC, 32 nodes & HTTP/2 over TCP, 32 concurrent channels & 9.93--11.44\,ms, between 75.5\% and 80.1\% of the per-call time \\
-Real pipeline ($k=3$) & REST + WAMP/Crossbar + gRPC & 210--250\,ms per stage, about 690\,ms total for a steady-state transit \\
+MPI collective & Intra-node shared memory & Median \texttt{reduce\_s} measured at $0.038$\,ms (38\,$\mu$s on 8 bytes) \\
+gRPC isolated & HTTP/2 over Docker bridge & Concurrent \texttt{Ping} latency: $1.1$--$1.3$\,ms \\
+Production chain ($k=3$) & REST + WAMP + gRPC & $210$--$250$\,ms per stage ($\approx 690$\,ms steady-state transit). First invocation: $5.78$\,s (Keystone token and WAMP session handshake) \\
 \bottomrule
 \end{tabular}
-\caption{Overhead by model.}
+\caption{Communication characteristics and measured overhead across execution substrates.}
+\label{tab:comm_overhead}
 \end{table}
 
-The \texttt{MPI\_Reduce} collective aggregates only two 8-byte scalars via intra-node shared memory: it was not timed in isolation in this campaign, and the expected value in the table is a reference figure, not a measurement.
+\subsection{Agglomeration}
 
-It is worth noting that the very first call to a freshly provisioned pipeline takes 5.78 seconds, against about 0.65 seconds at steady state in subsequent calls, a factor eight times slower. The cause is not a problem with the system itself, but the cost of startup: on first use, the satellite has to negotiate a new token with Keystone and open the WebSocket handshake with the WAMP bus, operations that subsequent calls do not repeat because the session stays open. It is a real operational cost, one that anyone using the platform for the first time after a restart would encounter, and it is for this reason kept separate from the steady-state communication cost reported in the table.
+Assigning individual verification tasks ($V_i$) to separate messages or threads would incur scheduling and communication overheads far exceeding the $57.4\,\mu$s task duration. Tasks are therefore agglomerated into contiguous blocks. For a batch of $N$ records divided among $P$ processing groups, group $g \in \{0, \dots, P-1\}$ receives
+\begin{equation}
+n_g = \left\lfloor \frac{N}{P} \right\rfloor + \begin{cases} 1 & \text{if } g < N \bmod P \\ 0 & \text{otherwise} \end{cases}
+\end{equation}
+This partition guarantees that chunk sizes differ by at most one signature, maintaining load balance under uniform task durations. 
 
-% =====================================================
-\section*{5. Aggregation}
+Agglomeration operates at two distinct tiers:
+\begin{enumerate}[nosep]
+  \item \textbf{Process/Container level:} The total batch $N$ is divided into $P$ chunks, one per MPI rank or gRPC container.
+  \item \textbf{Thread level:} Within each rank or container, the chunk $n_g$ is sub-partitioned across OpenMP threads.
+\end{enumerate}
 
-The three task-parallelism models aggregate partial results in different ways, consistent with their communication substrate. In the MPI model, aggregation happens through two collective reductions: \texttt{MPI\_SUM} on the total count of verified signatures, and \texttt{MPI\_MAX} on execution time, because the slowest rank determines when the job as a whole can be considered complete. In the gRPC dispatch, aggregation is asynchronous on the client side: the service that dispatched the requests waits for all of them to return with \texttt{asyncio.gather}, then sums the partial counts and checks that the total matches exactly the expected batch size; if the sum does not match, the program halts execution by raising an exception instead of proceeding with an incomplete count, a choice designed to make any data loss during concurrent dispatch immediately visible. In both cases the perceived overall time is $T_{tot} = \max_i(T_i)$, not the sum of the individual times, a detail that turns out to be useful for correctly interpreting both the deviation from Amdahl's law and the pipeline's behavior discussed later.
+\subsection{Aggregation}
 
-The third aggregation mechanism, that of the pipeline, is conceptually different from the other two: it does not combine independent results, but chains dependent states. The numeric output and the trace record produced by one stage are directly the input of the next stage, so there is no real final \textit{aggregation} step; the result simply emerges from the sequential traversal of the chain.
+Aggregation policies reflect the underlying concurrency model:
+\begin{itemize}[nosep]
+  \item \textbf{MPI Static:} Aggregation uses two collective reductions: \texttt{MPI\_SUM} over the valid signature counts, and \texttt{MPI\_MAX} over execution times (since the slowest rank defines the completion barrier).
+  \item \textbf{MPI Dynamic (Master-Worker):} Rank 0 acts as a coordinator, receiving chunk completion messages and accumulating the valid count on demand. Workers report their maximum compute time via reduction at task completion.
+  \item \textbf{gRPC Dispatch:} The client orchestrator invokes worker endpoints concurrently using Python's \texttt{asyncio.gather}. It accumulates the returned counts and asserts that the sum equals $N$, failing immediately upon missing data.
+  \item \textbf{Production Pipeline:} State is chained sequentially between stages; each stage passes transformed data to its successor without collective reduction.
+\end{itemize}
 
 % =====================================================
 \section*{6. Mapping}
