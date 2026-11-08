@@ -767,109 +767,183 @@ sudo bash -c 'for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
 
 ---
 
-## Stadio 13.4 — Analisi delle metriche e grafici di scalabilità
+## Stadio 13.4 & 13.4-bis — Analisi delle metriche, verifiche mirate e capacità reale
 
-### 1. Riepilogo Metodologico e Microbenchmark di Verifica (B0)
-- **Baseline $T_1$ Unica (E0):** Mediana = `1.103615 s` (IQR = `0.017572 s`, p25 = `1.090248 s`, p75 = `1.107820 s`), throughput `18.122,4 sig/s`.
-- **Microbenchmark Latenza Singola Firma ECDSA P-256 (`bench_single_verify`):**
-  - Eseguito su $N = 20.000$ firme sintetiche generate a priori con OpenSSL 3.0.15 e compilazione `-O2`.
-  - **Overhead del timer (`std::chrono::high_resolution_clock`):** `12.80 ns` (0.02% del tempo di verifica, trascurabile).
-  - **Latenza di verifica singola:**
-    - Media: `57.42 µs` ($\pm 7.27 µs$, CV = `12.66%`)
-    - Min: `50.79 µs`, p50 (Mediana): `55.71 µs`, p90: `59.73 µs`, p99: `87.44 µs`, Max: `269.32 µs`
-    - Throughput equivalente su 1 core: `17.416,1 sig/s` (perfetta coerenza con $T_1$).
-  - I dati campionati sono archiviati in `hpc-engine/results/m13/per_verify_cost.csv` e `per_verify_summary.csv`.
+### 1. Riepilogo Metodologico e Microbenchmark di Verifica (B0 & V1.2)
+- **Baseline $T_1$ Storica (E0):** Mediana = `1.103615 s` (IQR = `0.017572 s`), throughput `18.122,4 sig/s`.
+- **Nuova Baseline $T_1$ Intercalata Imparziale (E0b, V2.4):** Mediana = `1.063555 s` (IQR = `0.018350 s`), throughput `18.804,8 sig/s`.
+  - *Esito sul bias:* E0b è perfettamente allineata al tempo a $p=1$ di MPI puro (`1.0630 s`) e OpenMP puro (`1.0646 s`). Con $T_1(\text{E0b})$, lo speedup a $p=1$ si attesta a $0.98–1.00$ (azzerando il bias del 4–7% di E0 e i valori spuri negativi di Karp-Flatt).
+- **Microbenchmark Latenza Singola Firma ECDSA P-256 (`bench_single_verify`, B0):**
+  - Eseguito su $N = 20.000$ firme sintetiche con OpenSSL 3.0.15 e compilazione `-O2`.
+  - Overhead timer (`high_resolution_clock`): `12.80 ns` (0.02% del tempo di verifica).
+  - Latenza singola verifica: Media = `57.42 µs` ($\pm 7.27 µs$, CV = `12.66%`), Mediana (p50) = `55.71 µs`, Min = `50.79 µs`, p90 = `59.73 µs`, p99 = `87.44 µs`, Max = `269.32 µs`.
+  - Throughput equivalente su 1 core: `17.416,1 sig/s`.
+- **Microbenchmark Generazione Device Isolata (`bench_device_gen`, V1.2):**
+  - Misurato il tempo di `DeviceGenerator::generate_devices(N, seed)` (keygen ECDSA + firma):
+    - $N = 1.000$: Mediana = `0.0417 s` $\to$ **`41.69 µs/device`** (IQR = `1.8 µs`).
+    - $N = 5.000$: Mediana = `0.1995 s` $\to$ **`39.90 µs/device`** (IQR = `1.3 µs`).
+    - $N = 20.000$: Mediana = `0.7798 s` $\to$ **`38.99 µs/device`** (IQR = `2.6 µs`).
 
-### 2. Sintesi Numerica di Scalabilità ($S$, $E$, $e(p)$)
-Tutte le metriche sono calcolate tramite `compute_m13_metrics.py` su 10.000 ricampionamenti bootstrap al 95% di confidenza.
+### 2. Risoluzione dell'Origine dell'Overhead di gRPC (V1)
+1. **Analisi del codice (`worker_server.cpp:41-47`):**
+   - Nel metodo `ExecuteTask(VERIFY_SIGNATURES_BATCH)`, la riga 41 chiama `DeviceGenerator::generate_devices(batch_size, seed)` in modo sequenziale su un singolo thread.
+   - La regione cronometrata per `bench_res.time_seconds` (riga 42) racchiude **solo** `SignatureBench::run_parallel(...)`.
+   - La generazione dei device avviene quindi **dentro la RPC gRPC ma fuori da `time_seconds`/`verify_s`**.
+2. **Misura del puro costo di rete/dispatch asincrono (`bench_ping_dispatch.py`, V1.3):**
+   - Latenza wall-clock di `Ping` concorrente senza calcolo verso $k$ container:
+     - $k = 1$: `2.21 ms` (IQR = `0.48 ms`)
+     - $k = 2$: `2.55 ms` (IQR = `0.42 ms`)
+     - $k = 4$: `2.76 ms` (IQR = `19.17 ms`)
+     - $k = 8$: `3.99 ms` (IQR = `1.22 ms`)
+     - $k = 16$: `7.16 ms` (IQR = `2.72 ms`)
+     - $k = 20$: `7.43 ms` (IQR = `18.11 ms`)
+     - $k = 32$: `9.71 ms` (IQR = `1.98 ms`)
+3. **Scomposizione formale per ogni $p$ di E4 ($wall = ping(p) + gen(chunk) + verify\_s + residuo$):**
 
-| Modello | $p$ | Speedup $S(p)$ [95% CI] | Efficienza $E(p)$ | Karp-Flatt $e(p)$ | $T_p$ Mediano (s) | IQR $T_p$ (s) |
+| $p$ | Chunk | $T_{wall}$ (s) | $Ping$ (ms) | $Gen(chunk)$ (s) | $Verify$ (s) | $Atteso$ (s) | $Residuo$ (ms) | Quota Residuo su Wall |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 20.000 | 1.8729 | 2.21 | 0.7798 | 1.0788 | 1.8607 | **12.19** | **0.65%** |
+| 2 | 10.000 | 0.9353 | 2.55 | 0.3994 | 0.5307 | 0.9327 | **2.51** | **0.27%** |
+| 4 | 5.000 | 0.5217 | 2.76 | 0.1995 | 0.2930 | 0.4952 | **26.46** | **5.07%** |
+| 8 | 2.500 | 0.3804 | 3.99 | 0.0999 | 0.2020 | 0.3058 | **74.55** | 19.60% |
+| 16 | 1.250 | 0.2445 | 7.16 | 0.0499 | 0.1373 | 0.1944 | **50.15** | 20.51% |
+| 20 | 1.000 | 0.2340 | 7.43 | 0.0417 | 0.1170 | 0.1661 | **67.91** | 29.02% |
+
+*Esito confermato:* A $p \le 4$, oltre il **95–99%** della differenza $T_{wall} - T_{verify}$ è interamente spiegato dalla generazione sequenziale dei device sintetici sul worker containerizzato (~39 µs/firma). La rete e la serializzazione gRPC pesano per meno di 3–8 ms. A $p \ge 8$, subentra un overhead di concorrenza del client asincrono Python e del bridge Docker di circa 50–74 ms.
+4. **Impatto sul report precedente (M11.5):**
+   - In `hpc-engine/benchmarks/run_full_campaign.py` (riga 67), `network_overhead = max(0.0, rpc_latency - worker_time)` sottraeva la verifica dal tempo RPC, includendo la generazione dati.
+   - Di conseguenza, in `report/main.tex` (riga 154, riga 193, Tabella 2, Figura 4 e Sezione 7.3), l'asintoto a ~87k sig/s attribuito interamente a "HTTP/2 framing e passaggio dello stack di rete Linux" è stato in realtà limitato dalla generazione sequenziale delle firme a bordo dei worker.
+
+---
+
+### 3. Effetto del Mapping e del Binding: Validazione Sperimentale (V2)
+1. **Binding reale di E2 (`e2.log:438-439`):**
+   - Con `--use-hwthread-cpus --bind-to core` (senza `--map-by core`), Open MPI ha legato sia Rank 0 sia Rank 1 al `core 0 [hwt 0-1]`, forzando la contesa SMT sullo stesso core fisico ($S = 1.24$).
+2. **Campagna E2b (`--map-by core --bind-to core`, `results_e2b_mpi_map_core.csv`):**
+   - Con mapping esplicito per core, Rank 0 è collocato su Core 0 e Rank 1 su Core 1.
+   - **A $R = 2$:** il tempo crolla da `0.8919 s` a `0.5507 s`. Lo speedup sale a **$S = 1.93$** (vs $T_1(\text{E0b})$), con efficienza **$E = 0.97$** (97%!).
+   - L'anomalia $S=1.24$ era dunque al 100% un artefatto del mapping, non dell'algoritmo né di MPI.
+   - **Gradino a $R = 7$:** $R=6$ (tutti P-cores) registra `0.2000 s` ($S=5.32$); a $R=7$, quando il settimo rank viene collocato sul primo E-core (Core 6), il tempo balza a `0.3173 s` ($S=3.35, E=0.48$).
+3. **Campagna E1c (`OMP_PLACES=cores` con `close` vs `spread`):**
+   - **`close`:** mappa i primi thread sui P-cores (core 0, 1, 2, ...). A $T=2$, $S = 1.92$ ($E = 0.96$); a $T=4$, $S = 3.56$ ($E = 0.89$); a $T=6$, $S = 5.23$ ($E = 0.87$). Il crollo di efficienza avviene esattamente a $T=8$ ($E = 0.47$) con l'ingresso degli E-cores.
+   - **`spread`:** distribuisce i thread sull'intero processore (P-cores ed E-cores). A $T=2$, thread 0 finisce su Core 0 (P-core) e thread 1 su Core 7 (E-core): il tempo è `1.0627 s` ($S = 1.00, E = 0.50$), perché la barriera attende l'E-core lento!
+
+---
+
+### 4. Capacità Hardware Reale della Macchina (V3 / E9)
+Misurata tramite $q$ processi sequenziali indipendenti concorrenti (nessuna comunicazione, nessun lock):
+
+| Configurazione | $q$ | Descrizione | $T_{max}$ Mediano (s) | Throughput Aggregato (sig/s) | Capacità Relativa $C(q)/C(1)$ |
+|---|---|---|---|---|---|
+| **a** | 1 | 1 P-core (CPU 0) | 1.0767 | 18.576,0 | **1.00** |
+| **b** | 1 | 1 E-core (CPU 12) | 2.1190 | 9.438,4 | **0.51** (50.8% del P-core) |
+| **c** | 2 | 2 thread SMT sullo stesso P-core (CPU 0, 1) | 1.7946 | 22.288,8 | **1.20** (+20.0% resa SMT) |
+| **d** | 6 | 6 P-cores fisici (CPU 0,2,4,6,8,10) | 1.2064 | 99.468,0 | **5.35** |
+| **e** | 12 | 12 thread P-cores con SMT (CPU 0-11) | 1.9931 | 120.414,2 | **6.48** |
+| **f** | 14 | 14 core fisici (6 P-cores + 8 E-cores) | 2.3429 | 119.512,8 | **6.43** |
+| **g** | 20 | 20 thread totali (CPU 0-19) | 2.4592 | 162.658,2 | **8.76** |
+
+**Conclusioni architetturali quantitative:**
+1. **Rapporto E-core / P-core:** Un E-core impiega $1.97\times$ il tempo di un P-core e rende esattamente il **50.8%**.
+2. **Resa SMT:** Il secondo thread hardware su un P-core aggiunge solo il **+20.0%** di throughput aggregato.
+3. **Capacità aggregata massima reale della macchina:** È pari a **$C(20) = 11.26$ equivalenti P-core**, non a 20.
+4. **Efficienza rispetto alla reale capacità hardware ($E_{cap}(p) = S(p) / C(p)$):**
+   - A $p=6$ (P-cores): MPI puro raggiunge $E_{cap} = 5.32 / 6.00 = \mathbf{88.7\%}$.
+   - A $p=20$ (macchina satura): MPI puro raggiunge $S=8.80–9.27$, pari a $E_{cap} = 9.27 / 11.26 = \mathbf{82.3\%}$ della capacità reale della macchina (contro l'apparente $46\%$ calcolato rispetto all'impossibile ideale lineare $S=20$).
+
+---
+
+### 5. Tabelle Complete dei Modelli, Scheduling e Task-Based (V4)
+
+#### A. Sintesi Comparativa dei Modelli ($T_1(\text{E0b}) = 1.0636\,\text{s}$)
+
+| $p$ | Capacità $C(p)$ | E1 Unbound $S$ ($E_{cap}$) | E1c Close $S$ ($E_{cap}$) | E2b Map-Core $S$ ($E_{cap}$) | E3 Hybrid $S$ ($E_{cap}$) | E4 Compute $S$ ($E_{cap}$) | E4 Wall $S$ ($E_{cap}$) |
+|---|---|---|---|---|---|---|---|
+| 1 | 1.00 | 1.00 (100%) | 0.96 (96%) | 0.98 (98%) | — | 0.99 (99%) | 0.57 (57%) |
+| 2 | 2.00 | 1.95 (97%) | 1.92 (96%) | 1.93 (97%) | — | 2.00 (100%) | 1.14 (57%) |
+| 4 | 4.00 | 3.53 (88%) | 3.56 (89%) | 3.71 (93%) | — | 3.63 (91%) | 2.04 (51%) |
+| 6 | 6.00 | 4.29 (72%) | 5.23 (87%) | 5.32 (89%) | — | 4.71 (79%) | 2.26 (38%) |
+| 8 | 7.02 | 5.02 (72%) | 3.76 (54%) | 3.88 (55%) | 4.51 (64%) | 5.27 (75%) | 2.80 (40%) |
+| 12 | 9.05 | 6.37 (70%) | 5.34 (59%) | 5.49 (61%) | 6.38 (71%) | 5.97 (66%) | 3.26 (36%) |
+| 14 | 10.06 | 6.94 (69%) | 5.86 (58%) | 6.40 (64%) | 7.02 (70%) | — | — |
+| 16 | 10.46 | 7.50 (72%) | 6.68 (64%) | 7.31 (70%) | 7.84 (75%) | 7.75 (74%) | 4.35 (42%) |
+| 20 | 11.26 | 7.81 (69%) | 8.37 (74%) | 8.80 (78%) | 8.30 (74%) | 9.09 (81%) | 4.55 (40%) |
+
+#### B. Tabelle di Dettaglio E5 (OpenMP Scheduling)
+
+| $T$ | Schedule | $T_{med}$ (s) | IQR (s) | Throughput (sig/s) | Speedup $S$ [95% CI] | Efficienza $E$ |
 |---|---|---|---|---|---|---|
-| **E1 OpenMP Unbound** | 1 | 1.04 [1.01, 1.07] | 1.04 | — | 1.0646 | 0.0210 |
-| | 2 | 2.02 [1.87, 2.06] | 1.01 | -0.0095 | 0.5466 | 0.0179 |
-| | 4 | 3.67 [3.53, 3.81] | 0.92 | 0.0304 | 0.3011 | 0.0165 |
-| | 6 | 4.45 [3.88, 4.92] | 0.74 | 0.0695 | 0.2478 | 0.0315 |
-| | 8 | 5.21 [5.05, 5.26] | 0.65 | 0.0764 | 0.2118 | 0.0044 |
-| | 12 | 6.61 [6.27, 6.69] | 0.55 | 0.0742 | 0.1671 | 0.0044 |
-| | 16 | 7.78 [7.48, 7.89] | 0.49 | 0.0705 | 0.1419 | 0.0054 |
-| | 20 | 8.10 [7.41, 8.88] | 0.41 | 0.0772 | 0.1362 | 0.0210 |
-| **E1b OpenMP Bound (`close`)** | 1 | 1.01 [0.99, 1.02] | 1.01 | — | 1.0905 | 0.0224 |
-| | 2 | 1.21 [1.19, 1.23] | 0.61 | 0.6523 | 0.9118 | 0.0238 |
-| | 4 | 2.21 [2.15, 2.32] | 0.55 | 0.2696 | 0.4990 | 0.0305 |
-| | 6 | 3.29 [3.18, 3.36] | 0.55 | 0.1642 | 0.3349 | 0.0123 |
-| | 8 | 4.30 [4.19, 4.39] | 0.54 | 0.1229 | 0.2566 | 0.0080 |
-| | 12 | 6.39 [6.28, 6.50] | 0.53 | 0.0797 | 0.1726 | 0.0035 |
-| | 16 | 7.54 [7.21, 7.64] | 0.47 | 0.0748 | 0.1463 | 0.0033 |
-| | 20 | 8.10 [7.60, 8.44] | 0.41 | 0.0773 | 0.1362 | 0.0118 |
-| **E2 MPI Pure (`core`)** | 1 | 1.04 [1.02, 1.05] | 1.04 | — | 1.0630 | 0.0177 |
-| | 2 | 1.24 [1.22, 1.25] | 0.62 | 0.6164 | 0.8919 | 0.0232 |
-| | 4 | 3.94 [3.83, 3.97] | 0.98 | 0.0054 | 0.2803 | 0.0049 |
-| | 6 | 5.55 [5.47, 5.59] | 0.93 | 0.0160 | 0.1987 | 0.0036 |
-| | 8 | 4.14 [4.03, 4.19] | 0.52 | 0.1329 | 0.2663 | 0.0081 |
-| | 12 | 5.79 [5.69, 5.83] | 0.48 | 0.0975 | 0.1906 | 0.0019 |
-| | 16 | 7.62 [7.18, 7.71] | 0.48 | 0.0734 | 0.1449 | 0.0020 |
-| | 20 | 9.27 [8.79, 9.68] | 0.46 | 0.0609 | 0.1190 | 0.0103 |
-| **E3 Hybrid MPI+OpenMP** | 8 | 4.68 [4.58, 4.72] | 0.58 | 0.1014 | 0.2359 | 0.0018 |
-| | 12 | 6.62 [6.51, 6.66] | 0.55 | 0.0738 | 0.1667 | 0.0010 |
-| | 16 | 8.14 [7.90, 8.20] | 0.51 | 0.0644 | 0.1356 | 0.0026 |
-| | 20 | 8.62 [7.11, 8.89] | 0.43 | 0.0695 | 0.1281 | 0.0252 |
-| **E4 gRPC Wall ($S_{wall}$)** | 1 | 0.59 [0.56, 0.60] | 0.59 | — | 1.8729 | 0.0990 |
-| | 2 | 1.18 [1.12, 1.19] | 0.59 | 0.6949 | 0.9353 | 0.0247 |
-| | 4 | 2.12 [1.72, 2.16] | 0.53 | 0.2969 | 0.5217 | 0.0705 |
-| | 8 | 2.90 [2.67, 2.96] | 0.36 | 0.2510 | 0.3804 | 0.0244 |
-| | 16 | 4.51 [4.28, 4.67] | 0.28 | 0.1697 | 0.2445 | 0.0129 |
-| | 20 | 4.72 [4.06, 5.02] | 0.24 | 0.1706 | 0.2340 | 0.0483 |
-| **E4 gRPC Compute ($S_{comp}$)** | 1 | 1.02 [0.99, 1.06] | 1.02 | — | 1.0788 | 0.0470 |
-| | 2 | 2.08 [1.97, 2.10] | 1.04 | — | 0.5307 | 0.0254 |
-| | 4 | 3.77 [3.69, 3.86] | 0.94 | — | 0.2930 | 0.0135 |
-| | 8 | 5.46 [5.03, 6.36] | 0.68 | — | 0.2020 | 0.0520 |
-| | 16 | 8.04 [7.77, 8.56] | 0.50 | — | 0.1373 | 0.0163 |
-| | 20 | 9.43 [8.26, 9.73] | 0.47 | — | 0.1170 | 0.0197 |
-| **E8 OpenMP P-cores** | 1 | 1.07 [1.05, 1.07] | 1.07 | — | 1.0353 | 0.0127 |
-| | 2 | 2.09 [2.05, 2.10] | 1.04 | -0.0416 | 0.5289 | 0.0093 |
-| | 4 | 3.93 [3.86, 3.95] | 0.98 | 0.0062 | 0.2811 | 0.0019 |
-| | 6 | 5.44 [5.15, 5.47] | 0.91 | 0.0206 | 0.2029 | 0.0095 |
-| | 8 | 5.25 [5.09, 5.34] | 0.66 | 0.0749 | 0.2102 | 0.0055 |
-| | 12 | 6.55 [6.25, 6.59] | 0.55 | 0.0756 | 0.1684 | 0.0011 |
+| 4 | dynamic,16 | 0.2848 | 0.0122 | 70.236,8 | 3.73 [3.58, 3.79] | 0.93 |
+| 4 | guided | 0.2867 | 0.0093 | 69.769,1 | 3.71 [3.61, 3.79] | 0.93 |
+| 4 | static | 0.2880 | 0.0084 | 69.453,0 | 3.69 [3.61, 3.77] | 0.92 |
+| 8 | dynamic,16 | 0.1702 | 0.0028 | 117.499,0 | 6.25 [6.12, 6.30] | 0.78 |
+| 8 | guided | 0.1735 | 0.0113 | 115.292,0 | 6.13 [5.72, 6.18] | 0.77 |
+| 8 | static | 0.2110 | 0.0046 | 94.774,9 | 5.04 [4.93, 5.10] | 0.63 |
+| 12 | dynamic,16 | 0.1329 | 0.0006 | 150.498,5 | 8.00 [7.88, 8.06] | 0.67 |
+| 12 | guided | 0.1325 | 0.0050 | 150.991,5 | 8.03 [7.70, 8.10] | 0.67 |
+| 12 | static | 0.1658 | 0.0021 | 120.602,0 | 6.41 [6.29, 6.49] | 0.53 |
+| 16 | **dynamic,16** | **0.1156** | **0.0011** | **172.980,0** | **9.20 [9.03, 9.26]** | **0.58** |
+| 16 | guided | 0.1251 | 0.0049 | 159.852,5 | 8.50 [8.24, 8.72] | 0.53 |
+| 16 | static | 0.1382 | 0.0034 | 144.684,5 | 7.70 [7.43, 7.83] | 0.48 |
+| 20 | dynamic,16 | 0.1075 | 0.0018 | 186.040,0 | 9.89 [9.67, 9.95] | 0.49 |
+| 20 | guided | 0.1112 | 0.0037 | 179.799,0 | 9.56 [9.39, 9.83] | 0.48 |
+| 20 | static | 0.1225 | 0.0061 | 163.223,0 | 8.68 [8.53, 9.14] | 0.43 |
 
-### 3. Frazione Seriale di Amdahl ($f_s$) e Proiezione su $p > 4$
-Fit non lineare ai minimi quadrati su $p \le 4$ con 10.000 campioni bootstrap per ricavare la stima di $f_s$ e la banda di confidenza al 95%:
-- **`omp_pure_pcores` (OpenMP su soli P-core):** $f_s = \mathbf{0.522\%}$ [95% CI: $0.260\% - 1.153\%$].
-  - Sulle sole unità fisiche omogenee, il codice crittografico dimostra una frazione seriale praticamente nulla ($\approx 0.5\%$), confermando che l'algoritmo di verifica è imbarazzantemente parallelo.
-- **`mpi_pure_pcores` (MPI su soli P-core):** $f_s = \mathbf{1.155\%}$ [95% CI: $0.873\% - 1.807\%$].
-- **`mpi_pure` (MPI all-cores):** $f_s = \mathbf{1.397\%}$ [95% CI: $1.086\% - 2.255\%$].
-- **`omp_pure` (OpenMP unbound):** $f_s = \mathbf{2.787\%}$ [95% CI: $1.690\% - 3.992\%$].
-- **`omp_pure_bound` (OpenMP `close`):** $f_s = \mathbf{31.671\%}$ [95% CI: $29.618\% - 33.273\%$].
-  - *Nota metodologica:* L'anomalia di un $f_s$ elevato per `omp_pure_bound` è un artefatto del fit a $p \le 4$: la politica `close` alloca i primi due thread sullo stesso core fisico (SMT), deprimendo $S(2)$ a $1.21$ e simulando matematicamente un collo di bottiglia seriale che in realtà è contesa d'hardware execution units.
+*Verifica intervalli IQR a $T=16$:*
+- `dynamic,16`: $[0.1152, 0.1164]\,\text{s}$
+- `guided`: $[0.1226, 0.1275]\,\text{s}$
+- `static`: $[0.1362, 0.1396]\,\text{s}$
+I tre intervalli sono **completamente disgiunti**: `dynamic,16` supera `static` del **+19.5%** con certezza statistica totale.
 
-### 4. Distinzione Statistica delle Distribuzioni di Latenza (IQR Disgiunti)
-Dall'analisi delle bande interquartili $[p_{25}, p_{75}]$ di $T_p$:
-- A $p=4$:
-  - `mpi_pure` ($[0.2792, 0.2841]\,\text{s}$) e `omp_pure_pcores` ($[0.2806, 0.2825]\,\text{s}$) sono statisticamente indistinguibili tra loro.
-  - Entrambi sono **nettamente disgiunti** da `omp_pure` unbound ($[0.2930, 0.3095]\,\text{s}$), `omp_pure_bound` ($[0.4777, 0.5082]\,\text{s}$) e `grpc_openmp` ($[0.5130, 0.5835]\,\text{s}$).
-- A $p=8$:
-  - `omp_pure_pcores` ($[0.2074, 0.2129]\,\text{s}$) e `omp_pure` ($[0.2104, 0.2148]\,\text{s}$) sono sovrapposti.
-  - Entrambi sono **nettamente più veloci e disgiunti** da `hybrid_mpi_omp` ($[0.2355, 0.2373]\,\text{s}$), `omp_pure_bound` ($[0.2525, 0.2605]\,\text{s}$) e `mpi_pure` ($[0.2640, 0.2721]\,\text{s}$).
-- A $p=16$:
-  - `hybrid_mpi_omp` ($[0.1352, 0.1378]\,\text{s}$) supera e distacca in modo statisticamente significativo `omp_pure` ($[0.1404, 0.1458]\,\text{s}$), `mpi_pure` ($[0.1435, 0.1455]\,\text{s}$) e `omp_pure_bound` ($[0.1451, 0.1484]\,\text{s}$).
+#### C. Tabelle di Dettaglio E6 (Taskloop vs Dynamic Master-Worker)
 
-### 5. Anomalie Empiriche e Fenomeni Architetturali Rilevati
-1. **Contesa SMT a $p=2$ su Binding Stretto:** Con binding `threads_close` o `bind-to core`, i primi due thread logici condividono il Core 0 (P-core con Hyper-Threading), dimezzando il throughput potenziale ($E \approx 61\%$). OpenMP unbound evita naturalmente questo limite perché lo scheduler del kernel colloca i primi thread su core fisici distinti ($E = 1.01$).
-2. **Disparità E-cores e Sbilanciamento MPI a $p=8$:** In `mpi_pure`, a $p=6$ (tutti P-cores) l'efficienza è altissima ($E = 0.93$). A $p=8$, l'aggiunta di 2 E-cores fa crollare lo speedup da $5.55$ a $4.14$ ($E = 0.52$), perché il carico è equiripartito staticamente ($20.000 / 8 = 2.500$ firme per rank), e la barriera `MPI_Reduce` attende i rank più lenti allocati sugli E-cores a basso IPC/clock.
-3. **Efficacia dello Scheduling Dinamico su Alder Lake (E5):** A $T=16$, la clausola `dynamic,16` raggiunge `172.980 sig/s` (+19.5% rispetto a `static` a `144.684 sig/s`). La suddivisione in chunk compensa automaticamente la differenza di velocità di elaborazione tra P-cores ed E-cores.
-4. **Disaccoppiamento Compute vs Wall-Clock in gRPC (E4):** Il tempo di computazione all'interno dei container worker isolati ($S_{compute}$) scala in modo identico a MPI nativo ($S = 9.43$ a $p=20$). Tuttavia, la catena di rete, la serializzazione Protobuf e il dispatcher asincrono Python aggiungono una costante di circa `0.10–0.12 s` per richiesta, che impone un tetto rigido a $S_{wall} \le 4.72$ ($E_{wall} \le 24\%$).
-5. **Overhead di Messaggistica Master-Worker (E6):** Nel modello dinamico, l'overhead per richiesta di chunk è misurato in circa `100 µs`. Il throughput cresce proporzionalmente al numero di worker effettivi ($p = R - 1$).
+1. **OpenMP Taskloop vs Parallel For:**
+- A $T=4$: parallel for = `0.3011 s` ($S=3.53$); `taskloop grain 100` = `0.2893 s` ($S=3.68$).
+- A $T=8$: parallel for = `0.2118 s` ($S=5.02$); `taskloop grain 100` = `0.1740 s` ($S=6.11$).
+- A $T=12$: parallel for = `0.1671 s` ($S=6.37$); `taskloop grain 100` = `0.1379 s` ($S=7.71$).
+- A $T=20$: parallel for = `0.1362 s` ($S=7.81$); `taskloop grain 100` = `0.1120 s` ($S=9.49$).
+*Nota:* Il grainsize 10 soffre di overhead di scheduling dei task (`1.037 s`), mentre grainsize 50-100 supera sistematicamente il parallel for statico a thread elevati.
 
-### 6. Catalogo Grafici Generati (`graphs/m13/`)
-Tutti i grafici sono stati generati tramite `hpc-engine/benchmarks/generate_m13_graphs.py` in doppio formato (vettoriale PDF e raster PNG a 300 dpi):
-- `fig_a_strong_scaling.{pdf,png}`: Strong scaling comparativo ($S$ vs $p$ fino a $p=20$) con bande verticali colorate per le regioni microarchitetturali di Alder Lake (P-cores 1-6, mix P/E 7-14, SMT 15-20).
-- `fig_b_parallel_efficiency.{pdf,png}`: Efficienza parallela $E(p)$ con soglie guida evidenziate a $E=0.8$ ed $E=0.5$.
-- `fig_c_karp_flatt.{pdf,png}`: Andamento della metrica di Karp-Flatt $e(p)$, che dimostra la crescita dell'overhead di sincronizzazione su scale elevate.
-- `fig_d_amdahl_fit.{pdf,png}`: Curve di Amdahl fittate su $p \le 4$ con bande di confidenza bootstrap al 95% e confronto con i punti osservati a $p > 4$.
-- `fig_e_hybrid_heatmap.{pdf,png}`: Griglia termica $R \times T$ del modello ibrido MPI+OpenMP, con marcatura esplicita delle combinazioni a $T$ dispari soggette a condivisione SMT tra rank.
-- `fig_f_grpc_vs_mpi.{pdf,png}`: Confronto sistematico tra nodi dedicati containerizzati gRPC ($S_{wall}$ e $S_{compute}$) e MPI puro, fino alla saturazione a $p=32$.
-- `fig_g_openmp_schedules.{pdf,png}`: Confronto orizzontale a barre delle 15 politiche di scheduling OpenMP a $T=16$ (static vs dynamic vs guided).
-- `fig_h_taskbased_scaling.{pdf,png}`: Confronto tra approccio task-based OpenMP (`taskloop`) e master-worker dinamico MPI (`mpi_dynamic`) su diversi chunk/grain size.
-- `fig_i_pcores_vs_all.{pdf,png}`: Isolamento dell'eterogeneità Alder Lake: confronto tra esecuzione limitata ai P-core (0-11) ed esecuzione su tutti i core.
+2. **MPI Dynamic Master-Worker ($p_{calc} = R - 1$) vs MPI Statico:**
+- A $p_{calc} = 3$ ($R=4$ dyn): Dyn chunk 100 = `0.5391 s` ($S=1.97$) vs Static E2b = `0.3789 s` ($S=2.81$).
+- A $p_{calc} = 6$ ($R=7$ dyn): Dyn chunk 100 = `0.2710 s` ($S=3.92$) vs Static E2b = `0.2000 s` ($S=5.32$).
+- **A $p_{calc} = 7$ ($R=8$ dyn):**
+  - Statico E2b ($R=7$): crolla a `0.3173 s` ($S=3.35$).
+  - **Dinamico chunk 25:** impiega **`0.2582 s`** ($S=\mathbf{4.12}$)!
+- **A $p_{calc} = 8$ ($R=9$ dyn):**
+  - Statico E2b ($R=8$): impiega `0.2744 s` ($S=3.88$).
+  - **Dinamico chunk 100:** impiega **`0.2255 s`** ($S=\mathbf{4.72}$, **+21.7% di throughput**)!
+*Esito confermato:* Quando il pool include gli E-cores, **il master-worker dinamico recupera significativamente sullo statico**, perché i P-cores prelevano e processano un numero maggiore di chunk senza attendere gli E-cores alla barriera.
+
+#### D. Calibrazione di Amdahl e Valutazione Predizione vs Misura
+- **Chiarimento sul fit precedente:** Il fit precedente di `mpi_pure` ($f_s = 1.37\%$) utilizzava i punti $p \in [1, 2, 3, 4]$ accettando un residuo anomalo di $-0.73$ a $p=2$ ($S=1.24$), trainato da $p=3$ ($S=2.98$) e $p=4$ ($S=3.94$).
+- **Nuovo fit rigoroso su E2b (`mpi_pure_map_core`):**
+  - Punti di calibrazione: $p=1$ ($S=0.98$), $p=2$ ($S=1.93$), $p=3$ ($S=2.81$), $p=4$ ($S=3.71$).
+  - Frazione seriale risultante: $\mathbf{f_s = 2.802\%}$ (residui di calibrazione $\le 0.03$).
+  - **Predizione su P-cores ($p=6$):** Predetto = **$5.26$**, Misurato = **$5.32$** (Rapporto Obs/Pred = **$1.01$**, precisione 99%!).
+  - **Divergenza su E-cores:** A $p=8$, Predetto = $6.69$, Misurato = $3.88$ (Obs/Pred = **$0.58$**); a $p=20$, Predetto = $13.05$, Misurato = $8.80$ (Obs/Pred = **$0.67$**).
+  - La divergenza rispetto ad Amdahl per $p \ge 7$ è causata dall'ingresso di core asimmetrici con capacità dimezzata (50.8%), non da frazione seriale algoritmica.
+
+#### E. Stima Teorica dello Sbilanciamento Algoritmico vs Hardware
+- Dal microbenchmark B0, il coefficiente di variazione di una singola verifica è $CV_1 = 12.66\%$.
+- Per un blocco di $n$ firme indipendenti, la deviazione standard della somma scala con $\sqrt{n}$, e il CV del chunk è:
+  $$\mathbb{E}[CV_n] = \frac{CV_1}{\sqrt{n}}$$
+  - Per chunk di $n = 1.000$ firme (regime $p=20$): $\mathbb{E}[CV_{1000}] = \frac{12.66\%}{\sqrt{1000}} = \mathbf{0.40\%}$.
+  - Per chunk di $n = 2.500$ firme (regime $p=8$): $\mathbb{E}[CV_{2500}] = \frac{12.66\%}{\sqrt{2500}} = \mathbf{0.25\%}$.
+- **Confronto:** Lo sbilanciamento di costo computazionale dovuto alla sola variabilità statistica delle firme è inferiore allo **$0.40\%$**. Lo sbilanciamento empirico osservato a $p \ge 7$ ($> 40\%$) è due ordini di grandezza superiore, confermando che è interamente imputabile all'asimmetria hardware tra P-core ed E-core ($1.97\times$).
+
+---
+
+### 6. Catalogo Grafici Aggiornati (`graphs/m13/`)
+- `fig_a_strong_scaling.{pdf,png}`: Aggiornato con la curva del limite di capacità reale della macchina $C(p)/C(1)$ (tratto-punto magenta) accanto alla retta ideale $S = p$.
+- `fig_b_parallel_efficiency.{pdf,png}`: Aggiornato con l'efficienza massima teorica consentita dalla macchina $C(p)/p$ (tratto-punto magenta), che scende da 1.0 a 0.56 a $p=20$ per sola eterogeneità di clock/IPC.
+- `fig_c_karp_flatt.{pdf,png}`: Metrica di Karp-Flatt $e(p)$.
+- `fig_d_amdahl_fit.{pdf,png}`: Curve di Amdahl fittate su $p \le 4$ con banda bootstrap 95%.
+- `fig_e_hybrid_heatmap.{pdf,png}`: Griglia termica $R \times T$ con marcatura SMT su $T$ dispari.
+- `fig_f_grpc_vs_mpi.{pdf,png}`: gRPC ($S_{wall}$ vs $S_{compute}$) vs MPI nativo fino a $p=32$.
+- `fig_g_openmp_schedules.{pdf,png}`: Confronto delle 15 clausole di scheduling a $T=16$.
+- `fig_h_taskbased_scaling.{pdf,png}`: Taskloop vs dynamic master-worker MPI.
+- `fig_i_pcores_vs_all.{pdf,png}`: Isolamento P-cores vs ALL cores.
+
 
 

@@ -90,7 +90,13 @@ def plot_fig_a() -> None:
 
     # Ideal Linear
     p_ideal = np.linspace(1, 20, 100)
-    ax.plot(p_ideal, p_ideal, "k--", alpha=0.6, label="Ideal linear ($S = p$)", zorder=1)
+    ax.plot(p_ideal, p_ideal, "k--", alpha=0.6, label="Linear ideal ($S = p$)", zorder=1)
+
+    # Machine Capacity Curve C(p)/C(1) (E9)
+    cap_csv = RESULTS_DIR / "v3_machine_capacity_curve.csv"
+    if cap_csv.exists():
+        df_cap = pd.read_csv(cap_csv)
+        ax.plot(df_cap["p"], df_cap["c_cap"], "m-.", lw=2.2, alpha=0.85, label="Machine capacity limit $C(p)/C(1)$ (E9)", zorder=2)
 
     # 1. OpenMP Pure Unbound (E1)
     d1 = df[(df["experiment"] == "E1") & (df["model"] == "omp_pure")].sort_values("p_eff")
@@ -144,6 +150,12 @@ def plot_fig_b() -> None:
     ax.axhline(1.0, color="black", linestyle="--", alpha=0.5, label="Ideal ($E=1.0$)")
     ax.axhline(0.8, color="gray", linestyle=":", alpha=0.7, label="Threshold $E=0.8$")
     ax.axhline(0.5, color="red", linestyle=":", alpha=0.7, label="Threshold $E=0.5$")
+
+    # Machine Capacity Limit Efficiency: C(p)/p (E9)
+    cap_csv = RESULTS_DIR / "v3_machine_capacity_curve.csv"
+    if cap_csv.exists():
+        df_cap = pd.read_csv(cap_csv)
+        ax.plot(df_cap["p"], df_cap["c_cap"] / df_cap["p"], "m-.", lw=2.2, alpha=0.85, label="Capacity limit $C(p)/p$ (E9)", zorder=2)
 
     # 1. OpenMP Pure Unbound (E1)
     d1 = df[(df["experiment"] == "E1") & (df["model"] == "omp_pure")].sort_values("p_eff")
