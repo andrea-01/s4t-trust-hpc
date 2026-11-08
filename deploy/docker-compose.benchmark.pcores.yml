@@ -1,0 +1,66 @@
+services:
+  bench-worker-1:
+    cpuset: "0-11"
+  bench-worker-2:
+    cpuset: "0-11"
+  bench-worker-3:
+    cpuset: "0-11"
+  bench-worker-4:
+    cpuset: "0-11"
+  bench-worker-5:
+    cpuset: "0-11"
+  bench-worker-6:
+    cpuset: "0-11"
+  bench-worker-7:
+    cpuset: "0-11"
+  bench-worker-8:
+    cpuset: "0-11"
+  bench-worker-9:
+    cpuset: "0-11"
+  bench-worker-10:
+    cpuset: "0-11"
+  bench-worker-11:
+    cpuset: "0-11"
+  bench-worker-12:
+    cpuset: "0-11"
+  bench-worker-13:
+    cpuset: "0-11"
+  bench-worker-14:
+    cpuset: "0-11"
+  bench-worker-15:
+    cpuset: "0-11"
+  bench-worker-16:
+    cpuset: "0-11"
+  bench-worker-17:
+    cpuset: "0-11"
+  bench-worker-18:
+    cpuset: "0-11"
+  bench-worker-19:
+    cpuset: "0-11"
+  bench-worker-20:
+    cpuset: "0-11"
+  bench-worker-21:
+    cpuset: "0-11"
+  bench-worker-22:
+    cpuset: "0-11"
+  bench-worker-23:
+    cpuset: "0-11"
+  bench-worker-24:
+    cpuset: "0-11"
+  bench-worker-25:
+    cpuset: "0-11"
+  bench-worker-26:
+    cpuset: "0-11"
+  bench-worker-27:
+    cpuset: "0-11"
+  bench-worker-28:
+    cpuset: "0-11"
+  bench-worker-29:
+    cpuset: "0-11"
+  bench-worker-30:
+    cpuset: "0-11"
+  bench-worker-31:
+    cpuset: "0-11"
+  bench-worker-32:
+    cpuset: "0-11"
+
