@@ -23,7 +23,7 @@ This document records the exact data provenance, raw and derived CSV sources, an
 | Figure in Report | Label | Description | Generating Script | Primary Data Source (CSV / Logs) |
 |---|---|---|---|---|
 | Figure 1 | `fig:verify_flow` | Verification control flow | Direct TikZ vector code in `main.tex` | Algorithm 1 specification |
-| Figure 2 | `fig:profile_breakdown` | Instruction profile breakdown | Valgrind / Callgrind script | `graphs/profile_breakdown.pdf` |
+| Figure 2 | `fig:profile_breakdown` | Instruction profile breakdown | `hpc-engine/benchmarks/generate_report_graphs.py` (`plot_a_profile_breakdown()`) | `hpc-engine/results/callgrind_annotate.txt` (from `hpc-engine/results/callgrind.out`) |
 | Figure 3 | `fig:dep_graph` | Task dependency graph | Direct TikZ vector code in `main.tex` | Section 3 PCAM partitioning |
 | Figure 4 | `fig:pipeline_graph` | Pipeline functional graph | Direct TikZ vector code in `main.tex` | Section 3 PCAM pipeline decomposition |
 | Figure 5 | `fig:hybrid_architecture` | Two-tier hybrid architecture | Direct TikZ vector code in `main.tex` | Section 6 PCAM agglomeration |
@@ -34,7 +34,7 @@ This document records the exact data provenance, raw and derived CSV sources, an
 | Figure 10 | `fig:parallel_efficiency` | Parallel efficiency $E(p)$ & capacity bounds | `hpc-engine/benchmarks/generate_m13_graphs.py` | `derived_speedup.csv`, `v3_machine_capacity_curve.csv` |
 | Figure 11 | `fig:amdahl_fit` | Amdahl fit on $p \le 4$ with 95% CI | `hpc-engine/benchmarks/generate_m13_graphs.py` | `derived_amdahl.csv`, `results_e2b_mpi_map_core.csv` |
 | Figure 12 | `fig:grpc_vs_mpi` | gRPC wall & compute vs.\ MPI | `hpc-engine/benchmarks/generate_m13_graphs.py` | `results_e2b_mpi_map_core.csv`, `results_e4_grpc.csv` |
-| Figure 13 | `fig:pipeline_speedup` | Pipeline speedup vs.\ model | M11.5 plotting script | `graphs/pipeline_speedup_predicted_vs_measured.pdf` |
+| Figure 13 | `fig:pipeline_speedup` | Pipeline speedup vs.\ model | `hpc-engine/benchmarks/generate_report_graphs.py` (`plot_f_pipelining()`) | `hpc-engine/results/pipeline_throughput_i7_12700h_20260908.csv` |
 
 ---
 
@@ -42,14 +42,14 @@ This document records the exact data provenance, raw and derived CSV sources, an
 
 | Table in Report | Label | Description | Generating / Analysis Script | Primary Data Source (CSV / Logs) |
 |---|---|---|---|---|
-| Table 1 | `tab:callgrind_profile` | Callgrind flat instruction profile | Callgrind analysis script | OpenSSL 3.0 debug symbols profile, batch 500 |
-| Table 2 | `tab:comm_overhead` | Communication substrate overhead | Statistical summarization | `results_e2b_mpi_map_core.csv` (`reduce_s`), `v1_ping_dispatch.csv`, M11.5 telemetry |
+| Table 1 | `tab:callgrind_profile` | Callgrind flat instruction profile | `valgrind --tool=callgrind` & `callgrind_annotate` | `hpc-engine/results/callgrind_annotate.txt` (raw: `hpc-engine/results/callgrind.out`) |
+| Table 2 | `tab:comm_overhead` | Communication substrate overhead | Statistical summarization | `results_e2b_mpi_map_core.csv` (`reduce_s`), `v1_ping_dispatch.csv`, `pipeline_throughput_i7_12700h_20260908.csv` |
 | Table 3 | `tab:mapping_policies` | Mapping policy matrix | Conceptual PCAM design | `report/sezioni_13_5_bozza.tex` Section 5 |
 | Table 4 | `tab:binding_hardware` | Hardware binding flags & cores | Audit of launch scripts & logs | `hpc-engine/benchmarks/launch_*.sh`, `logs/e2.log`, `logs/e6.log`, `OMP_DISPLAY_AFFINITY` |
 | Table 5 | `tab:speedup_summary` | Speedup & efficiency ($p \in [2, 20]$) | `calculate_x4_efficiencies.py` | `results_e1c_omp_cores_close.csv`, `results_e2b_mpi_map_core.csv`, `results_e3_hybrid.csv`, `results_e4_grpc.csv` |
 | Table 6 | `tab:equal_cores_comparison` | Equal physical cores ($R \in [3, 14]$) | `analyze_x1.py`, `analyze_x3.py` | `results_e2b_mpi_map_core.csv`, `results_e6b_dynamic_map_core.csv`, `results_e3b_hybrid_map_core.csv`, `results_e10_dynamic_hybrid.csv` |
 | Table 7 | `tab:e4c_discriminant` | Discriminant gRPC pinning test | `analyze_x2.py` | `results_e4c_smt_ecore_discrim.csv` |
-| Table 8 | `tab:pipeline_perf` | Pipeline concurrent speedup ($k=3$) | M11.5 benchmark script | Historical pipeline campaign telemetry |
+| Table 8 | `tab:pipeline_perf` | Pipeline concurrent speedup ($k=3$) | `pipeline_throughput_benchmark.py` | `hpc-engine/results/pipeline_throughput_i7_12700h_20260908.csv` |
 
 ---
 
@@ -62,6 +62,12 @@ This document records the exact data provenance, raw and derived CSV sources, an
   - $f_s = 2.802\%$ [Bootstrap 95% CI: $2.330\%,\; 4.006\%$] fitted on $p \in \{1, 2, 3, 4\}$ of `results_e2b_mpi_map_core.csv`.
   - Stored in `hpc-engine/results/m13/derived_amdahl.csv`.
 - **Net Residual Formula (E4c):**
-  - $\text{Net Residual} = T_{\mathrm{wall}} - T_{\mathrm{verify}} - Gen(chunk) - Ping$.
+  - $\text{Net Residual} = T_{\mathrm{wall}} - T_{\mathrm{verify}} - Gen(chunk) - Ping$, with $Ping = 1.33$\,ms.
   - Reported in Table 7 and documented in `PROGRESS.md` Section 13.4-quater.
+- **Synthetic Device Generation Estimation ($Gen$) and Concurrent Control ($p=6$):**
+  - Formula: $\text{Gen}(N/p) = \frac{N}{p} \times \tau_{\mathrm{gen}}$.
+  - Sequential baseline on P-core (isolated): $\tau_{\mathrm{gen}} = 38.50\,\mu$s/device (measured with `hpc-engine/src/onboarding/bench_device_gen.cpp`, logged in `hpc-engine/results/m13/v1_device_gen_cost.csv`).
+  - Concurrent control at $p=6$ processes: $\tau_{\mathrm{gen}} = 41.61\,\mu$s/device (measured by launching 6 concurrent instances of `bench_device_gen` pinned to CPUs $\{0, 2, 4, 6, 8, 10\}$; for $N/p = 3{,}333$, $Gen = 0.1387$\,s, yielding Net Residual $68.7$\,ms).
+  - Assumed SMT factor: $\tau_{\mathrm{gen}} = 61.50\,\mu$s/device ($\approx 1.6\times$ sequential baseline, applied to \texttt{p2\_smt}).
+  - Script Implementation: `hpc-engine/benchmarks/run_e4c_smt_test.py` and `hpc-engine/benchmarks/analyze_x2.py`.
 

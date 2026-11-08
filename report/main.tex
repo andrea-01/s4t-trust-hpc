@@ -221,7 +221,7 @@ The verification tasks are completely mutually independent. All dependency edges
 
 \subsection{Task Interaction Graph}
 
-Verification tasks do not exchange state during execution. The interaction graph contains no edges between any pair of verification tasks $(V_i, V_j)$. Interaction is confined to the fan-in to $\Sigma$, transferring one integer per group of tasks. Communication is therefore static, regular, and read-once.
+Verification tasks do not exchange state during execution. The interaction graph contains no edges between any pair of verification tasks $(V_i, V_j)$. Interaction occurs solely at the fan-in to $\Sigma$, transferring one integer per group of tasks. Communication is therefore static, regular, and read-once.
 
 \subsection{A Second Workload: The Three-Stage Pipeline}
 
@@ -321,7 +321,7 @@ The Intel Core i7-12700H host features two distinct core architectures:
   \item 8 E-cores without SMT: physical cores 6--13, mapped to logical CPUs $\{12, 13, 14, 15, 16, 17, 18, 19\}$.
 \end{itemize}
 
-Experiments in earlier stages demonstrated that thread and rank allocation significantly influences observed speedup. Table~\ref{tab:binding_hardware} details the exact binding configurations employed across the benchmark campaigns.
+Experiments in earlier stages showed that thread and rank allocation significantly influences observed speedup. Table~\ref{tab:binding_hardware} details the exact binding configurations employed across the benchmark campaigns.
 
 \begin{table}[H]
 \centering\footnotesize
@@ -349,9 +349,9 @@ The historical benchmark E2 used \texttt{--bind-to core} without \texttt{--map-b
 
 \subsection{Static Against Dynamic Mapping}
 
-The trade-off between static and dynamic mapping depends directly on core homogeneity:
+The trade-off between static and dynamic mapping reflects core homogeneity:
 \begin{itemize}[nosep]
-  \item \textbf{Homogeneous regime ($R \le 6$):} When execution is confined to identical P-cores, static partition achieves maximum efficiency. Dynamic master-worker schemes underperform because the coordinator thread consumes a full physical core without performing verifications.
+  \item \textbf{Homogeneous regime ($R \le 6$):} When execution is allocated exclusively to identical P-cores, static partition achieves maximum efficiency. Dynamic master-worker schemes underperform because the coordinator thread consumes a full physical core without performing verifications.
   \item \textbf{Heterogeneous regime ($R \ge 7$):} When slow E-cores enter the worker pool, static partitioning is bottlenecked by the slowest worker at the barrier. Dynamic scheduling allows faster P-cores to process multiple chunks while E-cores process fewer, yielding higher aggregate throughput.
 \end{itemize}
 
@@ -621,7 +621,7 @@ To isolate the sources of latency, campaign E4c pinned each worker container to 
 \texttt{p14\_ecores}& 14& 6P + 8E $\{12..19\}$ & 0.3164 & 0.1772 & 0.1072 [estimated] & 30.8\,ms & --- \\
 \bottomrule
 \end{tabular}
-\caption{Discriminative container pinning experiment (E4c). Net residual reflects $T_{\mathrm{wall}} - T_{\mathrm{verify}} - Gen - Ping$, with $Ping = 1.33$\,ms. Values marked [estimated] compute $Gen$ as $(N/p) \times \tau_{\mathrm{gen}}$ with isolated sequential baseline $\tau_{\mathrm{gen}} = 38.50\,\mu$s on P-cores ($73.1\,\mu$s on E-cores); for \texttt{p2\_pcores}, $Gen = 0.3850$\,s uses the same $38.5\,\mu$s factor over $10{,}000$ devices. For \texttt{p2\_smt}, $Gen = 0.6150$\,s assumes an SMT contention penalty ($\tau_{\mathrm{gen}} = 61.5\,\mu$s), an assumption on which the $29.2$\,ms residual depends. For \texttt{p6\_pcores}, the concurrent control column uses measured $\tau_{\mathrm{gen}} = 41.61\,\mu$s ($Gen = 0.1387$\,s, yielding $68.7$\,ms).}
+\caption{Discriminative container pinning experiment (E4c). Net residual reflects $T_{\mathrm{wall}} - T_{\mathrm{verify}} - Gen - Ping$, with $Ping = 1.33$\,ms. Values marked [estimated] compute $Gen$ as $(N/p) \times \tau_{\mathrm{gen}}$ with isolated sequential baseline $\tau_{\mathrm{gen}} = 38.50\,\mu$s on P-cores ($73.1\,\mu$s on E-cores); for \texttt{p2\_pcores}, $Gen = 0.3850$\,s uses the same $38.5\,\mu$s factor over $10{,}000$ devices. For \texttt{p2\_smt}, $Gen = 0.6150$\,s assumes an SMT slowdown factor ($\tau_{\mathrm{gen}} = 61.5\,\mu$s), an assumption on which the $29.2$\,ms residual depends. For \texttt{p6\_pcores}, the concurrent control column uses measured $\tau_{\mathrm{gen}} = 41.61\,\mu$s ($Gen = 0.1387$\,s, yielding $68.7$\,ms).}
 \label{tab:e4c_discriminant}
 \end{table}
 
