@@ -45,7 +45,7 @@ This report evaluates data and task parallelism across two execution environment
 The experimental evaluations in this report distinguish two separate measurement campaigns:
 \begin{itemize}[nosep]
     \item \textbf{M13 Campaign (Controlled Multi-Core Benchmark):} The primary campaign designed to evaluate the PCAM stages and architectural performance. All experiments (E0--E10) process a fixed batch of $N = 20{,}000$ signatures, repeated for 10 interleaved iterations per configuration under a constant CPU frequency governor (\texttt{performance}). Workload metrics use the verified baseline $T_1 = 1.0636$\,s (median of E0b).
-    \item \textbf{M11.5 Campaign (Extended Scale Grid):} A secondary exploratory grid extending up to 32 worker containers with batches of 1,000 and 5,000 signatures (3 repetitions per point). In M11.5, containers were launched without hardware pinning, and RPC latency included unvectorized synthetic payload generation.
+    \item \textbf{M11.5 Campaign (Extended Scale Grid):} A secondary exploratory grid extending up to 32 worker containers with batches of 1,000 and 5,000 signatures (3 repetitions per point). In M11.5, containers were launched without hardware pinning, and RPC latency included sequential generation of synthetic devices on the worker ($\approx 39\,\mu$s/device), inside the RPC and outside the timed verification.
 \end{itemize}
 These two datasets are kept strictly separate and are not directly merged in cross-model comparisons.
 
@@ -180,7 +180,7 @@ Unattributed / runtime libc & 0.86\% \\
 \end{figure}
 
 Montgomery modular multiplication and squaring constitute 52.68\% of all executed instructions. In total, 94.14\% of instructions reside in cryptographic code (87.88\% elliptic-curve and BIGNUM integer arithmetic plus 6.26\% other cryptographic routines). Application logic accounts for 1.80\%, memory management for 3.20\%, and unattributed runtime/libc code for 0.86\%. 
-This confirms that the execution time is governed by integer modular arithmetic, with negligible floating-point operations.
+The profile attributes 94.14\% of executed instructions to cryptographic code (integer modular arithmetic) and 1.80\% to application logic; floating-point instructions were not counted separately, and execution time is governed by integer arithmetic.
 
 % =====================================================
 \section{Partitioning}\label{sec:partitioning}
@@ -345,14 +345,14 @@ E10 & Dynamic Hybrid & $4$--$7$ & $2$--$3$ & \texttt{--map-by slot:PE=T --bind-t
 \label{tab:binding_hardware}
 \end{table}
 
-The historical benchmark E2 used \texttt{--bind-to core} without \texttt{--map-by core}. Open MPI assigned ranks by slot, placing both Rank 0 and Rank 1 on physical Core 0 (logical CPUs 0 and 1), which provoked severe SMT execution unit contention ($S = 1.24$ at $p=2$). In campaign E2b, introducing \texttt{--map-by core --bind-to core} mapped Rank 0 to Core 0 and Rank 1 to Core 1, raising speedup to $S = 1.93$ ($E = 0.97$). A similar defect affected historical E6: the master coordinator shared Core 0 with worker 0, causing busy-polling contention that degraded $S$ to 1.97 at $R=4$. Isolating the master on a dedicated physical core in E6b resolved this issue.
+The historical benchmark E2 used \texttt{--bind-to core} without \texttt{--map-by core}. Open MPI assigned ranks by slot; ranks 0 and 1 were placed on the two hardware threads of Core 0; the observed $S = 1.24$ is consistent with the $\approx{+}20\%$ throughput of an SMT sibling thread. In campaign E2b, introducing \texttt{--map-by core --bind-to core} mapped Rank 0 to Core 0 and Rank 1 to Core 1, raising speedup to $S = 1.93$ ($E = 0.97$). A similar mapping effect occurred in historical E6, where the master coordinator shared Core 0 with worker 0, degrading $S$ to 1.97 at $R=4$. Isolating the master on a dedicated physical core in E6b raised speedup to $S = 2.87$: the shared physical core explains the loss; whether the master's polling is the mechanism was not tested under the E6 mapping (the yield test was run only with exclusive cores). In campaign E1 (unbound OpenMP), thread migration across cores was not instrumented or separated from other runtime factors in isolation.
 
 \subsection{Static Against Dynamic Mapping}
 
 The trade-off between static and dynamic mapping depends directly on core homogeneity:
 \begin{itemize}[nosep]
   \item \textbf{Homogeneous regime ($R \le 6$):} When execution is confined to identical P-cores, static partition achieves maximum efficiency. Dynamic master-worker schemes underperform because the coordinator thread consumes a full physical core without performing verifications.
-  \item \textbf{Heterogeneous regime ($R \ge 7$):} When slow E-cores enter the worker pool, static partitioning is bottlenecked by the slowest worker at the barrier. Dynamic scheduling allows faster P-cores to process multiple chunks while E-cores process fewer, yielding substantial throughput gains.
+  \item \textbf{Heterogeneous regime ($R \ge 7$):} When slow E-cores enter the worker pool, static partitioning is bottlenecked by the slowest worker at the barrier. Dynamic scheduling allows faster P-cores to process multiple chunks while E-cores process fewer, yielding higher aggregate throughput.
 \end{itemize}
 
 % =====================================================
@@ -449,7 +449,7 @@ Figure~\ref{fig:karp_flatt} tracks the Karp-Flatt metric $e(p)$.
 \label{fig:karp_flatt}
 \end{figure}
 
-In the homogeneous region ($p \le 6$), $e(p)$ remains low and stable ($0.02 \le e(p) \le 0.04$), reflecting negligible algorithmic serialization. When $p$ crosses into the E-core region ($p \ge 7$), $e(p)$ jumps sharply to $0.15$. In classical homogeneous systems, such an increase signals serial bottlenecks or communication overhead; here, it is directly caused by core performance heterogeneity under static chunk partitioning.
+In the homogeneous region ($p \le 6$), $e(p)$ remains low and stable ($0.026 \le e(p) \le 0.036$ for static MPI), reflecting low algorithmic serialization ($0.03$--$0.04$). When $p$ crosses into the E-core region ($p \ge 7$), $e(p)$ jumps to $0.15$--$0.18$ ($e(7) = 0.18$, $e(8) = 0.15$). In classical homogeneous systems, such an increase signals serial bottlenecks or communication overhead; here, it is consistent with core heterogeneity; in \S\ref{sec:eval_capacity} the static models reach 99--101\% of the measured $C_{\mathrm{static}}$, which quantitatively matches the observed plateau.
 
 \subsection{Comparison at Equal Physical Cores ($R$)}\label{sec:eval_physical_cores}
 
@@ -496,7 +496,7 @@ Figure~\ref{fig:openmp_schedules} compares OpenMP loop scheduling clauses across
 \label{fig:openmp_schedules}
 \end{figure}
 
-Under \texttt{static} scheduling at $T = 16$, throughput is limited to $144.7$\,ksig/s ($S = 7.69$ [7.62--7.81]). In contrast, \texttt{dynamic,16} achieves $173.0$\,ksig/s ($S = 9.20$ [9.14--9.23]), a 19.6\% improvement (measured against $v_1 = 18{,}804.8$\,sig/s). At $T = 20$, \texttt{dynamic,16} reaches $S = 9.89$ [9.75--9.91] compared to $S = 8.68$ [8.53--9.14] for \texttt{static} (+13.9\%). In E5, OpenMP threads were executed with default runtime scheduling without thread pinning (\texttt{omp\_default}, unpinned), allowing thread migration, which differs from the strict \texttt{OMP\_PROC\_BIND=close} mapping of E1c (Table~\ref{tab:speedup_summary}). At $T=16$, unbound static achieves $S = 7.69$ [7.62--7.81] compared to $S = 6.68$ [6.39--6.91] under pinned close binding. Dynamic dispatch mitigates core speed divergence by allowing P-cores to consume additional chunks while E-cores complete their initial assignments.
+Under \texttt{static} scheduling at $T = 16$, throughput is limited to $144.7$\,ksig/s ($S = 7.69$ [7.62--7.81]). Under dynamic scheduling, \texttt{dynamic,16} achieves $173.0$\,ksig/s ($S = 9.20$ [9.14--9.23]), a 19.6\% improvement (measured against $v_1 = 18{,}804.8$\,sig/s). At $T = 20$, \texttt{dynamic,16} reaches $S = 9.89$ [9.75--9.91] compared to $S = 8.68$ [8.53--9.14] for \texttt{static} (+13.9\%). In E5, OpenMP threads were executed with default runtime scheduling without thread pinning (\texttt{omp\_default}, unpinned), allowing thread migration, which differs from the strict \texttt{OMP\_PROC\_BIND=close} mapping of E1c (Table~\ref{tab:speedup_summary}). At $T=16$, unbound static achieves $S = 7.69$ [7.62--7.81] compared to $S = 6.68$ [6.39--6.91] under pinned close binding. Dynamic dispatch mitigates core speed divergence by allowing P-cores to consume additional chunks while E-cores complete their initial assignments.
 
 Figure~\ref{fig:taskbased_scaling} examines \texttt{taskloop} execution under varying grain sizes compared to MPI master-worker.
 
@@ -566,29 +566,29 @@ To isolate the sources of latency, campaign E4c pinned each worker container to 
 
 \begin{table}[H]
 \centering\small
-\begin{tabular}{lcp{3.4cm}cccc}
+\begin{tabular}{lcp{3.0cm}ccccc}
 \toprule
-\textbf{Config} & $p$ & \textbf{Assigned CPUs} & $T_{\mathrm{wall}}$ (s) & $T_{\mathrm{verify}}$ (s) & $Gen$ (s) [Method] & \textbf{Net Res.} \\
+\textbf{Config} & $p$ & \textbf{Assigned CPUs} & $T_{\mathrm{wall}}$ (s) & $T_{\mathrm{verify}}$ (s) & $Gen$ (s) [Method] & \textbf{Net Res.} & \textbf{Net Res. (Conc.)} \\
 \midrule
-\texttt{p2\_pcores} & 2 & $\{0, 2\}$ (Distinct P) & 1.0086 & 0.5740 & 0.3850 [measured] & 48.3\,ms \\
-\texttt{p2\_smt}    & 2 & $\{0, 1\}$ (Same P, SMT) & 1.5525 & 0.9072 & 0.6150 [estimated] & 29.2\,ms \\
-\texttt{p6\_pcores} & 6 & $\{0, 2, 4, 6, 8, 10\}$ & 0.4659 & 0.2573 & 0.1284 [estimated] & 79.0\,ms \\
-\texttt{p8\_ecores} & 8 & 6P + 2E $\{12, 14\}$ & 0.4979 & 0.2822 & 0.1875 [estimated] & 26.9\,ms \\
-\texttt{p8\_smt}    & 8 & 6P + 2SMT $\{1, 3\}$ & 0.4240 & 0.2455 & 0.1537 [estimated] & 23.5\,ms \\
-\texttt{p12\_ecores}& 12& 6P + 6E $\{12..17\}$ & 0.3662 & 0.2071 & 0.1250 [estimated] & 33.0\,ms \\
-\texttt{p14\_ecores}& 14& 6P + 8E $\{12..19\}$ & 0.3164 & 0.1772 & 0.1072 [estimated] & 30.8\,ms \\
+\texttt{p2\_pcores} & 2 & $\{0, 2\}$ (Distinct P) & 1.0086 & 0.5740 & 0.3850 [measured] & 48.3\,ms & --- \\
+\texttt{p2\_smt}    & 2 & $\{0, 1\}$ (Same P, SMT) & 1.5525 & 0.9072 & 0.6150 [estimated] & 29.2\,ms & --- \\
+\texttt{p6\_pcores} & 6 & $\{0, 2, 4, 6, 8, 10\}$ & 0.4659 & 0.2573 & 0.1284 [estimated] & 79.0\,ms & 68.7\,ms \\
+\texttt{p8\_ecores} & 8 & 6P + 2E $\{12, 14\}$ & 0.4979 & 0.2822 & 0.1875 [estimated] & 26.9\,ms & --- \\
+\texttt{p8\_smt}    & 8 & 6P + 2SMT $\{1, 3\}$ & 0.4240 & 0.2455 & 0.1537 [estimated] & 23.5\,ms & --- \\
+\texttt{p12\_ecores}& 12& 6P + 6E $\{12..17\}$ & 0.3662 & 0.2071 & 0.1250 [estimated] & 33.0\,ms & --- \\
+\texttt{p14\_ecores}& 14& 6P + 8E $\{12..19\}$ & 0.3164 & 0.1772 & 0.1072 [estimated] & 30.8\,ms & --- \\
 \bottomrule
 \end{tabular}
-\caption{Discriminative container pinning experiment (E4c). Net residual reflects $T_{\mathrm{wall}} - T_{\mathrm{verify}} - Gen - Ping$.}
+\caption{Discriminative container pinning experiment (E4c). Net residual reflects $T_{\mathrm{wall}} - T_{\mathrm{verify}} - Gen - Ping$, with $Ping = 1.33$\,ms. Values marked [estimated] compute $Gen$ as $(N/p) \times \tau_{\mathrm{gen}}$ with isolated sequential baseline $\tau_{\mathrm{gen}} = 38.50\,\mu$s on P-cores ($73.1\,\mu$s on E-cores); for \texttt{p2\_pcores}, $Gen = 0.3850$\,s uses the same $38.5\,\mu$s factor over $10{,}000$ devices. For \texttt{p2\_smt}, $Gen = 0.6150$\,s assumes an SMT contention penalty ($\tau_{\mathrm{gen}} = 61.5\,\mu$s), an assumption on which the $29.2$\,ms residual depends. For \texttt{p6\_pcores}, the concurrent control column uses measured $\tau_{\mathrm{gen}} = 41.61\,\mu$s ($Gen = 0.1387$\,s, yielding $68.7$\,ms).}
 \label{tab:e4c_discriminant}
 \end{table}
 
-The findings confirm:
+The measurements show:
 \begin{itemize}[nosep]
-  \item When containers are pinned to exclusive logical CPUs, the net infrastructure residual drops from $\approx 75$\,ms (unpinned E4 at $p=8$) to $\approx 25$\,ms (23.5--26.9\,ms at $p=8$, and 30.8--33.0\,ms at $p \ge 12$).
-  \item At $p=8$, assigning two containers to SMT threads on P-cores (\texttt{p8\_smt}) is faster than assigning them to E-cores (\texttt{p8\_ecores}, $T_{\mathrm{wall}} = 0.424$\,s vs.\ $0.498$\,s), with non-overlapping IQRs.
-  \item The net residual at $p=6$ (79.0\,ms) remains unexplained by core type. A control run measuring 6 concurrent generation processes yielded $41.61\,\mu$s/device (compared to $38.5\,\mu$s isolated), corresponding to a net residual of 68.7\,ms.
-  \item \textbf{Resolution of M11.5 throughput asymptote:} In the earlier M11.5 campaign, an asymptote at $\approx 87{,}000$\,signatures/s was attributed to HTTP/2 framing and network stack overhead. The M13 measurements reveal that the RPC latency included synthetic device generation on the worker. The actual network and serialization overhead is confined to 23--33\,ms.
+  \item When containers are pinned to exclusive logical CPUs, net residuals across configurations range from 23.5 to 79.0\,ms (\texttt{p2\_pcores} 48.3\,ms, \texttt{p2\_smt} 29.2\,ms, \texttt{p6\_pcores} 79.0\,ms [68.7\,ms under concurrent control], \texttt{p8\_ecores} 26.9\,ms, \texttt{p8\_smt} 23.5\,ms, \texttt{p12\_ecores} 33.0\,ms, \texttt{p14\_ecores} 30.8\,ms). The residual at $p=6$ (68.7--79.0\,ms, which utilizes 6 distinct P-cores with no SMT sharing and no E-cores) is not explained by any hypothesis tested here.
+  \item At $p=8$, assigning two containers to SMT threads on P-cores (\texttt{p8\_smt}, $T_{\mathrm{wall}} = 0.4240$\,s [0.4216--0.4393]) is faster than assigning them to E-cores (\texttt{p8\_ecores}, $T_{\mathrm{wall}} = 0.4979$\,s [0.4929--0.5013]), with non-overlapping IQRs.
+  \item The net infrastructure residual contains client dispatch, thread startup, serialization, and any error in the estimation of $Gen$, rather than pure network transport alone.
+  \item \textbf{Attribution of M11.5 throughput asymptote:} In the earlier M11.5 campaign, an asymptote at $\approx 87{,}000$\,signatures/s was attributed to HTTP/2 framing and network stack overhead. In M11.5 $\text{network\_overhead} = \text{RPC latency} - \text{worker time}$ included sequential generation of synthetic devices on the worker ($\approx 39\,\mu$s/device), inside the RPC and outside the timed verification. However, because the M11.5 and E4c experimental conditions differ (unpinned placement, up to 32 containers, $N \in \{1000, 5000\}$ vs $20{,}000$), the 87k sig/s plateau is not decomposed quantitatively here.
 \end{itemize}
 
 \subsection{Pipeline Model on Production Chain}\label{sec:eval_pipeline}
@@ -622,7 +622,7 @@ The gap between measured and theoretical speedup is 34.1\% at both $n=4$ and $n=
 
 \subsection{Omission of the $F_c$ Metric}
 
-The computational intensity metric $F_c = F_e / F_h$ evaluates the fraction of peak floating-point throughput achieved by an application. As demonstrated by the Callgrind profiling (Section~\ref{sec:profile}), ECDSA signature verification executes zero floating-point operations; over 94\% of instructions consist of integer modular arithmetic. Computing $F_c$ would yield an undefined or uninformative value. Throughput in verified signatures per second serves as the domain-appropriate metric.
+The computational intensity metric $F_c = F_e / F_h$ evaluates the fraction of peak floating-point throughput achieved by an application. As detailed in the instruction profiling (\S\ref{sec:profile}), the profile attributes 94.14\% of executed instructions to cryptographic code (integer modular arithmetic) and 1.80\% to application logic; floating-point instructions were not counted separately, and $F_c$ is omitted because the workload is integer arithmetic. Throughput in verified signatures per second serves as the domain-appropriate metric.
 
 % =====================================================
 \section{Limitations}\label{sec:limits}
@@ -640,12 +640,12 @@ The experimental findings should be interpreted within the following boundaries:
 \section{Conclusion}\label{sec:conclusion}
 
 This work evaluated task and data parallelism for ECDSA signature verification on heterogeneous multi-core hardware. 
-Key experimental conclusions include:
+Experimental conclusions include:
 \begin{enumerate}[nosep]
-  \item \textbf{Binding and mapping effects:} Missing core-level mapping flags caused severe SMT contention in early configurations ($S = 1.24$ at $p=2$); explicit core binding restored near-linear efficiency ($S = 1.93$, $E = 0.97$).
+  \item \textbf{Binding and mapping effects:} Missing core-level mapping flags placed ranks on SMT siblings of the same core in early configurations ($S = 1.24$ at $p=2$); explicit core mapping restored near-linear efficiency ($S = 1.93$, $E = 0.97$). Core sharing also accounts for early master-worker losses ($S = 1.97$ vs $2.87$ when isolated on exclusive cores), although polling was not tested under the shared mapping.
   \item \textbf{Static vs.\ dynamic scheduling:} On homogeneous P-cores ($R \le 6$), static partitioning achieved maximum throughput because dynamic schemes incur coordinator core overhead. On heterogeneous cores ($R \ge 7$), dynamic scheduling mitigated barrier idling, outperforming static partitioning by up to 48.9\%.
   \item \textbf{Machine capacity saturation:} Static MPI and OpenMP reached the empirical static capacity limit ($E_{\mathrm{cap\_static}} = 100.8\%$ and $99.4\%$), while OpenMP \texttt{dynamic,16} achieved $97.0\%$ of the ideal dynamic capacity.
-  \item \textbf{gRPC latency breakdown:} Deducting device generation revealed that net containerized RPC overhead is restricted to 23--33\,ms.
+  \item \textbf{gRPC latency breakdown:} Deducting synthetic device generation from containerized RPC latency yielded net residuals between 23.5 and 79.0\,ms across pinned configurations (with $p=6$ remaining unexplained).
 \end{enumerate}
 
 \end{document}
