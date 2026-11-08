@@ -358,7 +358,43 @@ The trade-off between static and dynamic mapping depends directly on core homoge
 % =====================================================
 \section{Hybrid Implementation: Processes and Threads}\label{sec:hybrid}
 
-The hybrid architecture combines task-level and data-level parallelism across two execution tiers.
+Parallelism in this workload can be structured along data-parallel and task-parallel dimensions across execution tiers.
+
+\subsection{Which Forms of Parallelism Are Implemented}\label{sec:forms_of_parallelism}
+
+Table~\ref{tab:parallel_taxonomy} classifies the concurrency schemes evaluated across the benchmark campaigns.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{lp{3.6cm}p{4.2cm}p{3.2cm}}
+\toprule
+\textbf{Model / Paradigm} & \textbf{Data Parallelism} & \textbf{Task Parallelism} & \textbf{Where in Code / Exp.} \\
+\midrule
+OpenMP loop (\texttt{for}) & Domain decomposition over batch items & None & E1, E1b, E1c, E5 \\
+MPI static & Domain decomposition ($N/R$ chunks) & None & E2, E2b \\
+gRPC static & Static chunk dispatch to containers & None & E4, E4b, E4c \\
+OpenMP \texttt{taskloop} & None (chunks treated as tasks) & Task pool with runtime work stealing & E6 (\texttt{taskloop}) \\
+MPI Master-Worker & None & Task farm (chunk request/grant cycle) & E6, E6b (Dynamic MPI) \\
+Production Pipeline & None & Functional pipeline ($S_1 \to S_2 \to S_3$) across requests & E7, M11.5 \\
+Static Hybrid (E3/E3b) & Two-level domain decomposition (ranks $\times$ threads) & None & E3, E3b \\
+Dynamic Hybrid (E10) & Domain decomposition within chunks ($c/T$) & Task farm across ranks (chunks = tasks) & E10 \\
+\bottomrule
+\end{tabular}
+\caption{Taxonomy of parallel models implemented across benchmark campaigns. Note that fine-grained concurrency within a single signature verification and intra-batch pipeline staging are not implemented.}
+\label{tab:parallel_taxonomy}
+\end{table}
+
+The implemented models encompass distinct parallel strategies:
+\begin{itemize}[nosep]
+  \item \textbf{Data parallelism (domain decomposition):} Static MPI, OpenMP \texttt{for}, and gRPC static dispatch partition the batch of $N$ signatures across ranks or threads. Crucially, E3/E3b represents two-level data parallelism (domain decomposition across $R$ ranks, followed by nested domain decomposition across $T$ threads within each rank), rather than a combination of task and data parallelism.
+  \item \textbf{Task parallelism:} OpenMP \texttt{taskloop} schedules independent task chunks from a task pool; MPI master-worker operates as a dynamic task farm where chunks ($c$ signatures) serve as discrete tasks dispatched on demand; the production pipeline provides functional parallelism across service stages ($S_1 \to S_2 \to S_3$) for concurrent requests.
+  \item \textbf{Combined task and data parallelism:} Benchmark E10 couples task farming at the inter-process level (Rank 0 dynamically dispatches chunks of size $c$ to worker ranks) with data-parallel execution at the intra-process level (each worker rank processes its chunk via $T$ OpenMP threads).
+  \item \textbf{Unimplemented forms of parallelism:} Parallelism within a single ECDSA signature verification (e.g., parallel elliptic curve point multiplication) is not implemented, as each verification executes sequentially within OpenSSL. Similarly, pipelined staging across verification phases within a single batch is not implemented.
+\end{itemize}
+
+\subsection{Two-Tier Hybrid Architecture and Execution Walkthrough}\label{sec:hybrid_walkthrough}
+
+Figure~\ref{fig:hybrid_architecture} illustrates the two-tier hybrid architecture.
 
 \begin{figure}[H]
 \centering
@@ -388,6 +424,12 @@ The hybrid implementation operates as follows:
   \item \textbf{Intra-process level (OpenMP):} Within each process, an OpenMP worksharing loop divides the chunk across $T$ worker threads. Each iteration allocates an independent \texttt{EVP\_MD\_CTX} verification context; threads share no mutable state, eliminating locking.
   \item \textbf{Substrate interface:} MPI is initialized via \texttt{MPI\_Init\_thread} requesting \texttt{MPI\_THREAD\_FUNNELED}. The program verifies that the runtime satisfies this level. All MPI collectives occur exclusively on the master thread outside parallel regions.
   \item \textbf{Distributed mapping:} In the containerized gRPC deployment, each worker process receives a \texttt{num\_threads} parameter in the RPC message and executes the identical OpenMP loop.
+\end{itemize}
+
+To illustrate the concrete execution mechanics with exact numerical parameters:
+\begin{itemize}[nosep]
+  \item \textbf{Static Hybrid Example ($R=4, T=2$, 8 physical cores, E3b):} A batch of $N = 20{,}000$ signatures is partitioned across $R=4$ ranks. Each rank receives a static chunk of $n_g = 5{,}000$ signatures. Within each rank, the chunk is executed by $T=2$ OpenMP threads using static worksharing (\texttt{schedule(static)}), allocating $2{,}500$ signatures per thread. Threads are bound to exclusive physical cores via \texttt{--map-by slot:PE=2 --bind-to core}, mapping Rank 0 to physical cores $\{0, 1\}$, Rank 1 to $\{2, 3\}$, Rank 2 to $\{4, 5\}$, and Rank 3 to $\{6, 7\}$ (without SMT hardware thread sharing). MPI communication is initialized with \texttt{MPI\_THREAD\_FUNNELED}: the OpenMP master thread invokes \texttt{MPI\_Reduce} for \texttt{MPI\_SUM} (valid count) and \texttt{MPI\_MAX} (elapsed time) only after all threads complete the worksharing loop at the implicit OpenMP barrier.
+  \item \textbf{Dynamic Hybrid Execution (E10):} In contrast to E3b, dynamic hybrid configuration $R=4, T=2$ designates Rank 0 as the master coordinator. Rank 0 dispatches chunks of size $c = 50$ signatures dynamically to worker ranks 1, 2, and 3 upon request. Each worker rank executes its 50-item chunk across $T=2$ OpenMP threads ($25$ signatures per thread). However, because Rank 0 is allocated $T=2$ dedicated physical cores by the job placement engine (\texttt{PE=2}), both cores on Rank 0 remain idle with respect to cryptographic verification, allocating $T=2$ idle cores out of the 8-core allocation (a 25\% resource overhead).
 \end{itemize}
 
 The nominal concurrency of a hybrid configuration is $P_{\mathrm{eff}} = R \times T$. Under dedicated physical core binding (E3b), $R \times T$ cores are assigned without hardware thread oversubscription.
@@ -631,9 +673,12 @@ The experimental findings should be interpreted within the following boundaries:
 \begin{itemize}[nosep]
   \item \textbf{Hardware architecture:} Experiments were conducted on a single Intel Core i7-12700H workstation with asymmetric core topologies (6 P-cores with SMT and 8 single-threaded E-cores). Results reflect heterogeneous multi-core dynamics rather than homogeneous HPC cluster nodes.
   \item \textbf{Containerized environment:} Isolated benchmark containers ran on a single host sharing memory, kernel cgroups, and local network namespaces, rather than physically separated server nodes.
+  \item \textbf{Synthetic device generation in E4c:} In benchmark E4c, device generation time ($Gen$) was estimated analytically from micro-benchmarks rather than measured directly inside the worker container; net residuals depend on the accuracy of these estimates.
+  \item \textbf{Unexplained gRPC residual at $p=6$:} The infrastructure residual of 68.7--79.0\,ms observed at $p=6$ (exclusive P-cores with no SMT or E-cores) remains unexplained by any tested hypothesis.
+  \item \textbf{Statistical sample size:} Benchmark configurations were evaluated across 10 repetitions; statistical comparisons and verdicts rely on median and interquartile range (IQR) overlap rather than parametric confidence intervals.
   \item \textbf{Governor logging:} The CPU frequency governor was configured to \texttt{performance} across all 20 logical CPUs and verified for all 458 runs launched via \texttt{launch\_*.sh} and during system fingerprinting. However, direct binary executions of E0, E1, E5, and taskloop were verified via manual checks rather than individual per-run log entries.
   \item \textbf{Environment fingerprint:} System reproducibility is anchored to the environment fingerprint recorded in M13.2 and its subsequent addendum.
-  \item \textbf{Production pipeline:} Campaign E7 on the live Stack4Things pipeline was not re-executed in M13 because external IoTronic services were offline; pipeline metrics are drawn from M11.5 with updated analytical framing.
+  \item \textbf{Production pipeline execution:} Campaign E7 on the live Stack4Things pipeline was not re-executed in M13 because it requires the three external stacks to be started and the satellite integration test to pass; it was not run in M13. Pipeline metrics are drawn from M11.5 with updated analytical framing.
 \end{itemize}
 
 % =====================================================
@@ -644,8 +689,10 @@ Experimental conclusions include:
 \begin{enumerate}[nosep]
   \item \textbf{Binding and mapping effects:} Missing core-level mapping flags placed ranks on SMT siblings of the same core in early configurations ($S = 1.24$ at $p=2$); explicit core mapping restored near-linear efficiency ($S = 1.93$, $E = 0.97$). Core sharing also accounts for early master-worker losses ($S = 1.97$ vs $2.87$ when isolated on exclusive cores), although polling was not tested under the shared mapping.
   \item \textbf{Static vs.\ dynamic scheduling:} On homogeneous P-cores ($R \le 6$), static partitioning achieved maximum throughput because dynamic schemes incur coordinator core overhead. On heterogeneous cores ($R \ge 7$), dynamic scheduling mitigated barrier idling, outperforming static partitioning by up to 48.9\%.
+  \item \textbf{Hybrid execution performance:} At equal physical cores, static hybrid execution (E3b) improves upon pure models at specific core counts ($R=8$, $S=4.02$ vs $3.88$ for MPI and $3.77$ for OpenMP; $R=10$, $S=4.80$ vs $4.72$), is lower at $R=12$ ($5.15$ vs $5.49$), and is statistically indistinguishable at $R=14$. Dynamic hybrid (E10) is consistently slower due to coordinator idle cores and OpenMP fork-join overhead across small chunks.
   \item \textbf{Machine capacity saturation:} Static MPI and OpenMP reached the empirical static capacity limit ($E_{\mathrm{cap\_static}} = 100.8\%$ and $99.4\%$), while OpenMP \texttt{dynamic,16} achieved $97.0\%$ of the ideal dynamic capacity.
   \item \textbf{gRPC latency breakdown:} Deducting synthetic device generation from containerized RPC latency yielded net residuals between 23.5 and 79.0\,ms across pinned configurations (with $p=6$ remaining unexplained).
+  \item \textbf{Production pipeline scaling:} On the end-to-end Stack4Things pipeline (M11.5 data), pipelining achieves $1.58\times$ speedup at $n=8$ requests (a 36.8\% elapsed time reduction), compared to $2.40\times$ predicted by the theoretical model; the cause of the gap was not tested in isolation.
 \end{enumerate}
 
 \end{document}
