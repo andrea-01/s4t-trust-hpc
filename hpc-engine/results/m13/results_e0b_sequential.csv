@@ -1,0 +1,11 @@
+experiment,model,ranks,threads,p_eff,batch,rep,time_seconds,throughput,valid_count,gen_s,verify_s,reduce_s,binding,cpuset,schedule,oversubscribed
+E0b,sequential_e0b,1,1,1,20000,2,1.11342,17962.6,20000,0.0,1.11342,0.0,none,all,none,0
+E0b,sequential_e0b,1,1,1,20000,7,1.03712,19284.1,20000,0.0,1.03712,0.0,none,all,none,0
+E0b,sequential_e0b,1,1,1,20000,6,1.07142,18666.8,20000,0.0,1.07142,0.0,none,all,none,0
+E0b,sequential_e0b,1,1,1,20000,9,1.05826,18899.0,20000,0.0,1.05826,0.0,none,all,none,0
+E0b,sequential_e0b,1,1,1,20000,8,1.06663,18750.6,20000,0.0,1.06663,0.0,none,all,none,0
+E0b,sequential_e0b,1,1,1,20000,1,1.06048,18859.4,20000,0.0,1.06048,0.0,none,all,none,0
+E0b,sequential_e0b,1,1,1,20000,4,1.07307,18638.0,20000,0.0,1.07307,0.0,none,all,none,0
+E0b,sequential_e0b,1,1,1,20000,0,1.05299,18993.5,20000,0.0,1.05299,0.0,none,all,none,0
+E0b,sequential_e0b,1,1,1,20000,5,1.08057,18508.8,20000,0.0,1.08057,0.0,none,all,none,0
+E0b,sequential_e0b,1,1,1,20000,3,1.03789,19269.8,20000,0.0,1.03789,0.0,none,all,none,0
