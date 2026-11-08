@@ -12,12 +12,16 @@
 \usepackage{caption}
 \usepackage{enumitem}
 \usepackage{float}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc}
 
 \hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
 \captionsetup{font=small}
 
 \title{\textbf{Report --- High Performance Computing} \\[0.2cm]
-\large Project \texttt{s4t-trust-hpc}: distributed verification of ECDSA signatures}
+\large Project \texttt{s4t-trust-hpc}: Distributed Verification of ECDSA Signatures}
 \author{Andrea Di Marco}
 \date{}
 
@@ -26,21 +30,154 @@
 \vspace{-0.4cm}
 
 % =====================================================
-\section*{1. Introduction}
+\section{Introduction and Measurement Environments}
 
-The compute-intensive workload chosen for this work is the verification of ECDSA digital signatures on the NIST P-256 curve, the step that the \texttt{s4t-trust-hpc} platform performs to decide whether an IoT device is authorized to be onboarded. That platform was developed for the Distributed Systems course, and it provides a real infrastructure on which to build and measure the HPC component. The report covers, with real experimental data: data parallelism with OpenMP, task parallelism in two independent implementations (MPI and gRPC dispatch) measured up to 32 nodes, two hybrid combinations of task and data parallelism, a three-stage pipeline model on the production chain, and the formal metrics of Speedup, Efficiency, Amdahl's law and Scalability.
+The compute-intensive workload in this project is the batch verification of ECDSA digital signatures on the NIST P-256 elliptic curve. In the \texttt{s4t-trust-hpc} platform, this operation is executed during device onboarding to determine whether an incoming IoT device is authentic before registration on an immutable ledger. 
 
-\subsection*{Measurement environments}
+This report evaluates data and task parallelism across two execution environments:
+\begin{enumerate}[nosep]
+    \item \textbf{Isolated benchmark (containerized):} An environment composed of ephemeral Docker containers (\texttt{bench-worker-1..32}) hosted on a single physical workstation. Each container runs a standalone C++ gRPC service exposing the signature verification routine. The containers share a dedicated Docker bridge network with no external gateway or authentication dependencies.
+    \item \textbf{Production chain (Stack4Things/IoTronic):} A three-stage pipeline orchestrating three containerized boards registered in an IoTronic deployment. Requests traverse a Keystone-authenticated REST interface, dispatch via a WAMP/Crossbar messaging bus to the Lightning-Rod agent on each board, and invoke local C++ workers via gRPC.
+\end{enumerate}
 
-The data reported here come from two different infrastructures, used for different purposes and never mixed together.
+\subsection{Separation of Experimental Datasets}
 
-\begin{sloppypar}
-The first is an \textbf{isolated benchmark}: a set of ephemeral Docker containers (\texttt{bench-worker-1..32}), each a standalone gRPC process exposing the signature-verification function, with no connection to Stack4Things/IoTronic. It is the environment on which the entire extended task and data parallelism grid runs, because it allows the number of nodes to be varied freely (up to 32) and each configuration to be repeated multiple times without the cost of provisioning real boards. Measurements from this environment are clean in the sense that they isolate the pure compute and network cost, without the authentication or the messaging bus of the production platform.
-\end{sloppypar}
+The experimental evaluations in this report distinguish two separate measurement campaigns:
+\begin{itemize}[nosep]
+    \item \textbf{M13 Campaign (Controlled Multi-Core Benchmark):} The primary campaign designed to evaluate the PCAM stages and architectural performance. All experiments (E0--E10) process a fixed batch of $N = 20{,}000$ signatures, repeated for 10 interleaved iterations per configuration under a constant CPU frequency governor (\texttt{performance}). Workload metrics use the verified baseline $T_1 = 1.0636$\,s (median of E0b).
+    \item \textbf{M11.5 Campaign (Extended Scale Grid):} A secondary exploratory grid extending up to 32 worker containers with batches of 1,000 and 5,000 signatures (3 repetitions per point). In M11.5, containers were launched without hardware pinning, and RPC latency included unvectorized synthetic payload generation.
+\end{itemize}
+These two datasets are kept strictly separate and are not directly merged in cross-model comparisons.
 
-The second is the \textbf{real production pipeline}: three boards registered on Stack4Things/IoTronic, each paired with a C++ worker, orchestrated by a satellite service that authenticates against Keystone and dispatches work through the WAMP/Crossbar bus to the Lightning-Rod agent of each board, which in turn invokes the worker via gRPC. This environment is slower and less controllable than the isolated benchmark, but it is the only one that measures the real cost of the platform's multi-protocol communication, and it is the one used for the three-stage pipeline model discussed in the communication section.
+\subsection{Hardware Environment}
 
-Hardware environment common to both: Intel Core i7-12700H, 14 physical cores and 20 logical threads, 32\,GiB of RAM. This figure, 20 logical threads, is the threshold beyond which an experimental configuration enters oversubscription, and it is referenced repeatedly in the following sections.
+All benchmarks run on an Intel Core i7-12700H host with 32\,GiB of DDR5 RAM running Linux kernel 6.8. The processor contains 14 physical cores organized into two microarchitectural clusters:
+\begin{itemize}[nosep]
+    \item 6 Performance cores (P-cores, Golden Cove), supporting 2 hardware threads each via Simultaneous Multi-Threading (SMT), mapped to logical CPUs 0--11.
+    \item 8 Efficiency cores (E-cores, Gracemont), single-threaded, mapped to logical CPUs 12--19.
+\end{itemize}
+The machine exposes 20 logical execution units in total. Configurations utilizing more than 20 threads or processes enter oversubscription.
+
+% =====================================================
+\section{Problem and Sequential Algorithm}
+
+The workload consists of verifying $N$ cryptographic signatures on the NIST P-256 elliptic curve. The input is a batch of $N$ independent records; each record contains a public key $Q$, a message $m$, and a signature $(r, s)$. The output is the count of records with valid signatures. The batch has no internal ordering, and individual verification tasks do not depend on one another.
+
+\subsection{Verification of a Single Signature}
+
+Let $G$ denote the base point of the NIST P-256 curve, $n$ its prime order, and $H$ the SHA-256 cryptographic hash function. Verifying one record proceeds according to Algorithm~\ref{alg:ecdsa_verify}.
+
+\begin{algorithm}[H]
+\caption{Sequential verification of one ECDSA signature}
+\label{alg:ecdsa_verify}
+\begin{algorithmic}[1]
+\Require Public key $Q$, message $m$, signature $(r,s)$
+\Ensure \textsc{valid} or \textsc{invalid}
+\If{$r \notin [1, n-1]$ \textbf{or} $s \notin [1, n-1]$}
+    \State \Return \textsc{invalid}
+\EndIf
+\State $e \gets H(m)$ \Comment{SHA-256 digest interpreted as integer}
+\State $w \gets s^{-1} \bmod n$ \Comment{Modular inverse}
+\State $u_1 \gets e \cdot w \bmod n,\quad u_2 \gets r \cdot w \bmod n$
+\State $R \gets u_1 G + u_2 Q$ \Comment{Two scalar multiplications on curve}
+\If{$R$ is the point at infinity}
+    \State \Return \textsc{invalid}
+\EndIf
+\State \Return \textsc{valid} \textbf{if} $x_R \bmod n = r$ \textbf{else} \textsc{invalid}
+\end{algorithmic}
+\end{algorithm}
+
+In the implementation, this operation is executed via OpenSSL's high-level EVP interface using the call pair \texttt{EVP\_DigestVerifyInit} (configured with SHA-256 and the EC key) and \texttt{EVP\_DigestVerify}, rather than an obsolete direct call to \texttt{ECDSA\_verify}. The two scalar multiplications in step 5 represent the dominant computational load. Figure~\ref{fig:verify_flow} outlines the logic following the preliminary range check.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=0.65cm, every node/.style={font=\small},
+  box/.style={draw,rounded corners,minimum width=3.4cm,minimum height=0.65cm,align=center},
+  dec/.style={draw,diamond,aspect=2.4,inner sep=1pt,align=center},
+  arr/.style={-{Latex[length=2mm]},thick}]
+\node[box] (a) {$e = H(m)$};
+\node[box,below=of a] (b) {$w = s^{-1} \bmod n$};
+\node[box,below=of b] (c) {$u_1 = e w,\; u_2 = r w \pmod n$};
+\node[box,below=of c] (d) {$R = u_1 G + u_2 Q$};
+\node[dec,below=0.75cm of d] (e) {$R \ne \infty$ and\\$x_R \bmod n = r$?};
+\node[box,below left=0.75cm and 0.3cm of e] (v) {valid};
+\node[box,below right=0.75cm and 0.3cm of e] (i) {invalid};
+\draw[arr] (a)--(b); \draw[arr] (b)--(c); \draw[arr] (c)--(d); \draw[arr] (d)--(e);
+\draw[arr] (e)-|node[above,pos=0.2]{yes}(v);
+\draw[arr] (e)-|node[above,pos=0.2]{no}(i);
+\end{tikzpicture}
+\caption{Control flow of a single ECDSA verification after range checking.}
+\label{fig:verify_flow}
+\end{figure}
+
+\subsection{Per-Verification Cost and Sequential Baseline}
+
+To assess variability at the finest granularity, isolated execution times were measured across $20{,}000$ individual signature verifications (\texttt{per\_verify\_summary.csv}). The timer invocation overhead was measured at 12.8\,ns. 
+The verification latency exhibits:
+\begin{itemize}[nosep]
+    \item Mean cost: $57.42\,\mu$s ($\text{standard deviation} = 7.27\,\mu$s)
+    \item Coefficient of variation: $CV = 12.66\%$
+    \item Median (p50): $55.71\,\mu$s, 90th percentile (p90): $59.73\,\mu$s, 99th percentile (p99): $87.44\,\mu$s
+    \item Minimum: $50.79\,\mu$s, Maximum: $269.32\,\mu$s
+\end{itemize}
+Because $CV \approx 12.7\%$, individual tasks have nearly uniform computational duration.
+
+Algorithm~\ref{alg:batch_verify} presents the reference sequential baseline. Its execution time over $N = 20{,}000$ signatures on a single P-core thread, compiled with \texttt{-O2}, defines the baseline $T_1 = 1.0636$\,s (median of 10 runs of E0b, with an interquartile range of 0.0031\,s, yielding $18{,}804.8$\,signatures/s). $T_1$ serves as the denominator for all speedup and efficiency values in the M13 campaign.
+
+\begin{algorithm}[H]
+\caption{Sequential batch verification (reference baseline, time $T_1$)}
+\label{alg:batch_verify}
+\begin{algorithmic}[1]
+\Require Batch of $N$ records
+\State $\textit{valid} \gets 0$
+\For{$i = 0,\dots,N-1$}
+  \State Allocate verification context (\texttt{EVP\_MD\_CTX})
+  \If{\textsc{Verify}$(\text{record}_i)$ is valid}
+    \State $\textit{valid} \gets \textit{valid} + 1$
+  \EndIf
+  \State Free verification context
+\EndFor
+\State Assert $\textit{valid} = N$ \Comment{Synthetic records are valid by construction}
+\State \Return $\textit{valid}$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Profiling of the Sequential Code}\label{sec:profile}
+
+The sequential algorithm was profiled using Valgrind Callgrind with OpenSSL debug symbols. Because Callgrind instruments machine instructions rather than sampling wall-clock time, results reflect the percentage of executed CPU instructions. Table~\ref{tab:callgrind_profile} and Figure~\ref{fig:profile_breakdown} summarize the instruction distribution for a batch of 500 signatures.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{lr}
+\toprule
+\textbf{Function / Region} & \textbf{\% Executed Instructions} \\
+\midrule
+\texttt{\_\_ecp\_nistz256\_mul\_montq} & 32.71\% \\
+\texttt{\_\_ecp\_nistz256\_sqr\_montq} & 19.97\% \\
+Other elliptic curve primitives & 14.48\% \\
+\texttt{point\_double} + AVX2 & 7.71\% \\
+BIGNUM operations (\texttt{BN\_uadd}, shift, div) & 7.10\% \\
+\texttt{ord\_sqr\_mont} & 5.91\% \\
+\midrule
+Total Elliptic Curve and BIGNUM & \textbf{87.88\%} \\
+Other cryptographic routines & 6.26\% \\
+Memory management (\texttt{malloc}/\texttt{free}) & 3.20\% \\
+Application logic & 1.80\% \\
+\bottomrule
+\end{tabular}
+\caption{Flat instruction profile from Valgrind/Callgrind for sequential baseline (batch=500).}
+\label{tab:callgrind_profile}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth]{figures/profile_breakdown.pdf}
+\caption{Instruction breakdown from Callgrind profiling.}
+\label{fig:profile_breakdown}
+\end{figure}
+
+Montgomery modular multiplication and squaring constitute 52.68\% of all executed instructions. In total, 87.88\% of instructions reside in elliptic-curve point arithmetic and multiprecision integer operations. Application logic accounts for only 1.80\%. 
+This confirms that the execution time is governed by integer modular arithmetic, with negligible floating-point operations.
 
 \newpage
 % =====================================================
