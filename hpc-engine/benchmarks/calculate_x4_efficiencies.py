@@ -108,3 +108,4 @@ for p in [16, 20]:
             ec_s = med / cs * 100
             ec_d = med / cd * 100
             print(f"p={p:2d} | {m[0]:<15} | S={med:.2f} [{q25:.2f}-{q75:.2f}] | E_cap_static={ec_s:5.1f}% | E_cap_dyn={ec_d:5.1f}%")
+

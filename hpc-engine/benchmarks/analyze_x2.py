@@ -27,3 +27,4 @@ for name, grp in df.groupby("config_name", sort=False):
     res_ms_str = stats_ms(grp["residual_s"])
     tp_med = float(np.percentile(grp["throughput"], 50))
     print(f"{name:<12} | {p:2d} | {wall_str:<22} | {ver_str:<22} | {gen_est:11.4f} | {ping_ms:8.1f} | {res_ms_str:<22} | {tp_med:10.1f}")
+

@@ -73,3 +73,4 @@ for r in ranks:
         c100_cmp = cmp_str(t100, e2b_tuple)
 
     print(f"{r:2d} | {s_e2b_str:<20} | {sr_e2b_str:>5} | {s25_str:<20} | {sr25_str:>5} | {c25_cmp:<15} | {s100_str:<20} | {sr100_str:>5} | {c100_cmp:<15}")
+
