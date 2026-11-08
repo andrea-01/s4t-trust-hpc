@@ -1087,5 +1087,39 @@ Campagna eseguita con `hpc_engine_mpi_dynamic` con binding esplicito a core fisi
 - **Amdahl:** La frazione seriale $f_s = 2.802\%$ [Bootstrap 95% CI: $2.330\%,\; 4.006\%$] su E2b ($p \le 4$) è una perdita di scalabilità effettiva a $p \le 4$, non codice seriale algoritmico.
 - **Affinità OpenMP:** Provata sperimentalmente a runtime con `OMP_DISPLAY_AFFINITY=true`, confermando la collocazione del thread 1 su Core 7 (E-core) con `spread` a $T=2$ e la saturazione sequenziale dei P-cores con `close`.
 
+---
+
+## Stadio 13.4-quater — Verifiche Rigorose a Pari Core, Discriminazione SMT ed E10
+
+### 1. Confronto Rigoroso E6b vs E2b a Pari Core Fisici (X1)
+Completati i rank dispari mancanti di E2b ($R = 9, 11, 13$, 10 ripetizioni con `--map-by core --bind-to core`). Il confronto corretto è indicizzato per **core fisici allocati ($R$)**:
+- **Regime omogeneo P-cores ($R \le 6$):** E6b dinamico **perde sistematicamente** rispetto a E2b statico (da $-31.4\%$ a $R=3$ a $-15.7\%$ a $R=6$), poiché il Master occupa interamente un core fisico per il solo coordinamento ($S/R$ scende a $0.64–0.75$ contro $0.89–0.98$ dello statico).
+- **Regime eterogeneo ($R \ge 7$):** E6b **vince stabilmente** su E2b statico (+41.7% a $R=8$, +40.4% a $R=9$, +35.0% a $R=10$, +32.0% a $R=12$, +27.4% a $R=14$). Il vantaggio percentuale decresce con $R$ poiché la quota di carico statico per worker diminuisce. A $R=7$, sebbene E6b ($S=4.99$) superi E2b a $R=7$ ($S=3.35$), resta comunque inferiore a 6 P-core statici ($S=5.32$) a causa del core consumato dal coordinatore.
+
+### 2. Test Discriminante SMT vs E-cores su Container gRPC (X2)
+Eseguita la campagna E4c vincolando ciascun container gRPC a una specifica CPU logica esclusiva tramite file compose override (`results_e4c_smt_ecore_discrim.csv`):
+- A $p=2$: `p2_smt` ({0, 1}) rallenta verifica ($1.58\times$) e generazione ($1.60\times$) rispetto a due P-core distinti `p2_pcores` ({0, 2}).
+- A $p=8$: il test distingue nettamente l'ipotesi E-core (`p8_ecores`: $T_{wall} = 0.498\text{ s}$, $T_{verify} = 0.282\text{ s}$, residuo $213.9\text{ ms}$) dall'ipotesi SMT (`p8_smt`: $T_{wall} = 0.424\text{ s}$, $T_{verify} = 0.245\text{ s}$, residuo $176.8\text{ ms}$). Tutti gli intervalli IQR sono disgiunti.
+- L'overhead residuo a $p \ge 8$ è **compatibile con l'asimmetria della generazione dati**: detratta la generazione sul percorso critico, il vero costo infrastrutturale gRPC è confinato a **23–33 ms**.
+
+### 3. Benchmark E10: Master-Worker Dinamico Ibrido (X3)
+Misurate 10 ripetizioni intercalate di E10 (`hpc_engine_mpi_dynamic` con `--map-by slot:PE=T --bind-to core`, chunk $25\cdot T$ e $100\cdot T$):
+- A pari core fisici (8, 10, 12, 14), **E10 perde sistematicamente rispetto a E6b dinamico puro ($T=1$)** su tutte le configurazioni (ad es. a 8 core $S=3.94$ vs $5.49$, a 14 core $S=6.43$ vs $8.15$), poiché il master alloca $T$ core fisici senza calcolare (fino al 25% di core inattivi) e sussiste l'overhead di scheduling OpenMP sui chunk.
+- Rispetto a E3b (ibrido statico), E10 vince a 12 core con $6\times 2$ ($S=5.68$ vs $5.15$), mentre è indistinguibile a 8, 10 e 14 core con $T=2$. Rispetto a OpenMP close (E1c), E10 vince a 12 e 14 core.
+
+### 4. Normalizzazione Unificata su $T_1(\text{E0b})$ e Grafici Rigenerati (X4)
+- Curve di capacità $C_{static}(p)$ e $C_{dyn}(p)$ ricalcolate su $v_{E0b} = 18.804,8\text{ sig/s}$ ($T_1(\text{E0b}) = 1.063555\text{ s}$), azzerando la discrepanza del 2%.
+- A $p=20$, lo speedup di MPI puro statico ($S=8.81$ [8.22–9.19]) è **pari alla capacità statica entro l'incertezza sperimentale**: $E_{cap\_static} = 100.8\%$ [IQR: $94.1\%–105.2\%$]. OpenMP `dynamic,16` estrae il **$97.0\%$** [IQR: $95.6\%–97.1\%$] della reale capacità dinamica ($C_{dyn}(20) = 10.2039$).
+- Rigenerati tutti i grafici (`fig_a_strong_scaling` e `fig_b_parallel_efficiency`).
+
+### 5. Stato Esperimento E7 Pipeline Reale (X5)
+Come concordato, l'esperimento E7 su pipeline end-to-end è sospeso poiché i 3 stack esterni (Compose base, IoTronic e Pipeline) sono spenti. Per eseguire E7 in una sessione dedicata, il comando di pre-check per verificare lo stato dell'infrastruttura prima del lancio è:
+```bash
+# Pre-check E7: verifica che i servizi gRPC, gateway e IoTronic siano online
+curl -s http://localhost:8000/health | grep -q "ok" && \
+curl -s http://localhost:8812/v1/boards | grep -q "boards" && \
+python3 -c "import grpc, sys; sys.path.insert(0, 'satellite/app'); import pipeline_pb2, pipeline_pb2_grpc; ch = grpc.insecure_channel('localhost:50051'); stub = pipeline_pb2_grpc.PipelineWorkerStub(ch); res = stub.Ping(pipeline_pb2.google_dot_protobuf_dot_empty__pb2.Empty(), timeout=2.0); print('Worker-1 Health:', res.healthy)"
+```
+
 
 
