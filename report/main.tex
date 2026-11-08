@@ -120,7 +120,7 @@ The verification latency exhibits:
     \item Median (p50): $55.71\,\mu$s, 90th percentile (p90): $59.73\,\mu$s, 99th percentile (p99): $87.44\,\mu$s
     \item Minimum: $50.79\,\mu$s, Maximum: $269.32\,\mu$s
 \end{itemize}
-Because $CV \approx 12.7\%$, individual tasks have nearly uniform computational duration.
+Because $CV \approx 12.7\%$, individual tasks have nearly uniform computational duration. The mean per-verification cost of $57.42\,\mu$s ($55.71\,\mu$s median) differs by $\approx 7\%$ from the amortized loop rate $T_1 / N = 1.0636\,\text{s} / 20{,}000 = 53.18\,\mu$s because the two measurements reflect different experimental conditions: the isolated micro-benchmark incurs per-call timer overhead and individual function dispatch, whereas $T_1$ executes continuous batch verification in a tight loop. The per-call mean is used strictly to inform task granularity in Agglomeration (\S\ref{sec:agglomeration}), while $T_1$ serves as the reference denominator for all speedup and efficiency calculations.
 
 Algorithm~\ref{alg:batch_verify} presents the reference sequential baseline. Its execution time over $N = 20{,}000$ signatures on a single P-core thread, compiled with \texttt{-O2}, defines the baseline $T_1 = 1.0636$\,s (median of 10 runs of E0b, with an interquartile range of 0.0031\,s, yielding $18{,}804.8$\,signatures/s). $T_1$ serves as the denominator for all speedup and efficiency values in the M13 campaign.
 
@@ -163,6 +163,9 @@ Total Elliptic Curve and BIGNUM & \textbf{87.88\%} \\
 Other cryptographic routines & 6.26\% \\
 Memory management (\texttt{malloc}/\texttt{free}) & 3.20\% \\
 Application logic & 1.80\% \\
+Unattributed / runtime libc & 0.86\% \\
+\midrule
+\textbf{Total} & \textbf{100.00\%} \\
 \bottomrule
 \end{tabular}
 \caption{Flat instruction profile from Valgrind/Callgrind for sequential baseline (batch=500).}
@@ -176,7 +179,7 @@ Application logic & 1.80\% \\
 \label{fig:profile_breakdown}
 \end{figure}
 
-Montgomery modular multiplication and squaring constitute 52.68\% of all executed instructions. In total, 87.88\% of instructions reside in elliptic-curve point arithmetic and multiprecision integer operations. Application logic accounts for only 1.80\%. 
+Montgomery modular multiplication and squaring constitute 52.68\% of all executed instructions. In total, 94.14\% of instructions reside in cryptographic code (87.88\% elliptic-curve and BIGNUM integer arithmetic plus 6.26\% other cryptographic routines). Application logic accounts for 1.80\%, memory management for 3.20\%, and unattributed runtime/libc code for 0.86\%. 
 This confirms that the execution time is governed by integer modular arithmetic, with negligible floating-point operations.
 
 % =====================================================
@@ -327,10 +330,10 @@ Experiments in earlier stages demonstrated that thread and rank allocation signi
 \textbf{Exp.} & \textbf{Model} & \textbf{Ranks} & \textbf{Threads} & \textbf{Binding / Affinization Flags} & \textbf{Cores} & \textbf{Core Sharing} \\
 \midrule
 E1 & OpenMP unbound & 1 & $1$--$20$ & OS default scheduling (no \texttt{OMP\_PLACES}) & $1$--$14$ & Uncontrolled migration \\
-E1b/c & OpenMP close & 1 & $1$--$20$ & \texttt{OMP\_PLACES=cores}, \texttt{OMP\_PROC\_BIND=close} & $1$--$14$ & Fills P then E then SMT \\
+E1b/c & OpenMP close & 1 & $1$--$20$ & \texttt{OMP\_PLACES=cores}, \texttt{OMP\_PROC\_BIND=close} (wraps to SMT on P for $T > 14$) & $1$--$14$ & Fills P then E then SMT \\
 E1c & OpenMP spread & 1 & $1$--$20$ & \texttt{OMP\_PLACES=cores}, \texttt{OMP\_PROC\_BIND=spread} & $1$--$14$ & Alternates P and E \\
 E2 & MPI pure (historical) & $1$--$20$ & 1 & \texttt{--use-hwthread-cpus --bind-to core} & $1$--$14$ & Ranks 0 and 1 share Core 0 \\
-E2b & MPI pure (corrected) & $1$--$20$ & 1 & \texttt{--map-by core --bind-to core} & $1$--$14$ & One rank per physical core \\
+E2b & MPI pure (corrected) & $1$--$20$ & 1 & \texttt{--map-by core --bind-to core} (with \texttt{--use-hwthread-cpus} for $p > 14$) & $1$--$14$ & One rank per physical core \\
 E3 & Hybrid (historical) & $2$--$10$ & $2$--$10$ & \texttt{--use-hwthread-cpus --bind-to hwthread} & $1$--$14$ & Uncontrolled SMT sharing \\
 E3b & Hybrid (corrected) & $4$--$7$ & $2$--$3$ & \texttt{--map-by slot:PE=T --bind-to core} & $8$--$14$ & $T$ dedicated cores per rank \\
 E6 & Master-Worker & $4$--$14$ & 1 & \texttt{--use-hwthread-cpus --bind-to hwthread} & $4$--$14$ & Master shares Core 0 with W0 \\
@@ -421,21 +424,21 @@ Figure~\ref{fig:strong_scaling} displays strong scaling across execution models 
 \cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \cmidrule(lr){8-9}
 $p$ & $S$ [IQR] & $E$ & $S$ [IQR] & $E$ & $S$ [IQR] & $E$ & $S_{\mathrm{wall}}$ [IQR] & $S_{\mathrm{compute}}$ [IQR] \\
 \midrule
-2  & 1.92 [1.86--1.97] & 0.96 & 1.93 [1.88--1.99] & 0.97 & 1.94 [1.90--1.98] & 0.97 & 1.05 [1.05--1.06] & 1.85 [1.84--1.86] \\
-4  & 3.56 [3.44--3.69] & 0.89 & 3.71 [3.58--3.75] & 0.93 & 3.65 [3.61--3.74] & 0.91 & 2.05 [2.00--2.09] & 3.66 [3.63--3.69] \\
-6  & 5.23 [5.07--5.27] & 0.87 & 5.32 [5.20--5.36] & 0.89 & 5.10 [5.05--5.18] & 0.85 & 2.28 [2.26--2.30] & 4.13 [4.08--4.20] \\
-8  & 3.77 [3.72--3.85] & 0.47 & 3.88 [3.76--3.99] & 0.48 & 4.02 [4.01--4.02] & 0.50 & 2.14 [2.12--2.16] & 3.77 [3.76--3.80] \\
-12 & 5.34 [5.14--5.42] & 0.45 & 5.49 [5.46--5.54] & 0.46 & 5.15 [5.14--5.16] & 0.43 & 2.90 [2.89--2.91] & 5.14 [5.13--5.15] \\
-16 & 6.68 [6.39--6.91] & 0.42 & 7.31 [6.49--7.43] & 0.46 & 7.02 [6.84--7.18] & 0.44 & 3.37 [3.35--3.38] & 6.26 [6.17--6.32] \\
-20 & 8.37 [8.07--8.48] & 0.42 & 8.81 [8.22--9.19] & 0.44 & 8.30 [7.95--8.48] & 0.42 & 4.54 [4.51--4.58] & 7.43 [7.39--7.46] \\
+2  & 1.92 [1.86--1.97] & 0.96 & 1.93 [1.88--1.99] & 0.97 & --- & --- & 1.05 [1.05--1.06] & 1.85 [1.84--1.86] \\
+4  & 3.56 [3.44--3.69] & 0.89 & 3.71 [3.58--3.75] & 0.93 & --- & --- & 2.05 [2.00--2.09] & 3.66 [3.63--3.69] \\
+6  & 5.23 [5.07--5.27] & 0.87 & 5.32 [5.20--5.36] & 0.89 & --- & --- & 2.28 [2.26--2.30] & 4.13 [4.08--4.20] \\
+8  & 3.77 [3.72--3.85] & 0.47 & 3.88 [3.76--3.99] & 0.48 & 4.02 [4.01--4.02]$^\dagger$ & 0.50 & 2.14 [2.12--2.16] & 3.77 [3.76--3.80] \\
+12 & 5.34 [5.14--5.42] & 0.45 & 5.49 [5.46--5.54] & 0.46 & 5.15 [5.14--5.16]$^\dagger$ & 0.43 & 2.90 [2.89--2.91] & 5.14 [5.13--5.15] \\
+16 & 6.68 [6.39--6.91] & 0.42 & 7.31 [6.49--7.43] & 0.46 & 7.02 [6.84--7.18]$^*$ & 0.44 & 3.37 [3.35--3.38] & 6.26 [6.17--6.32] \\
+20 & 8.37 [8.07--8.48] & 0.42 & 8.81 [8.22--9.19] & 0.44 & 8.30 [7.95--8.48]$^*$ & 0.42 & 4.54 [4.51--4.58] & 7.43 [7.39--7.46] \\
 \bottomrule
 \end{tabular}
-\caption{Speedup and parallel efficiency across concurrency paradigms for $p \in \{2, \dots, 20\}$.}
+\caption{Speedup and parallel efficiency across concurrency paradigms for $p \in \{2, \dots, 20\}$. $^\dagger$Measured under E3b with strict physical core mapping (\texttt{--map-by slot:PE=T --bind-to core}); $^*$Measured under E3 with hardware-thread mapping (\texttt{--bind-to hwthread}); $p=2,4,6$ were not evaluated in hybrid mode ($R \ge 4, T \ge 2$). The two hybrid mappings are not directly comparable.}
 \label{tab:speedup_summary}
 \end{table}
 
 At $p \le 6$, execution scales linearly on the homogeneous P-cores: MPI reaches $S = 5.32$ ($E = 0.89$), and OpenMP reaches $S = 5.23$ ($E = 0.87$). 
-At $p = 7$, static partitioning introduces a pronounced performance cliff: the workload assigned to the 7th rank runs on an E-core, which is approximately $1.95\times$ slower than a P-core. In static MPI, all six P-core ranks finish their chunks early and idle at the reduction barrier, pulling speedup down to $S = 3.35$ at $p=7$ and $S = 3.88$ at $p=8$.
+At $p = 7$, static partitioning introduces a performance drop: the workload assigned to the 7th rank runs on an E-core, which is approximately $1.97\times$ slower than a P-core (measured throughput of 8 E-cores is 50.8\% of 8 P-core threads, E9b). In static MPI, all six P-core ranks finish their chunks early and idle at the reduction barrier, pulling speedup down to $S = 3.35$ at $p=7$ and $S = 3.88$ at $p=8$.
 
 Figure~\ref{fig:karp_flatt} tracks the Karp-Flatt metric $e(p)$.
 
@@ -450,7 +453,7 @@ In the homogeneous region ($p \le 6$), $e(p)$ remains low and stable ($0.02 \le 
 
 \subsection{Comparison at Equal Physical Cores ($R$)}\label{sec:eval_physical_cores}
 
-Evaluating models as a function of allocated physical cores ($R \in [1, 14]$) accounts for coordinator overheads and thread layouts. Table~\ref{tab:equal_cores_comparison} compares static MPI (E2b), OpenMP close (E1c), static hybrid (E3b), dynamic master-worker (E6b), and dynamic hybrid (E10).
+Evaluating models as a function of allocated physical cores on selected core counts ($R \in \{3, \dots, 10, 12, 14\}$) accounts for coordinator overheads and thread layouts. Core counts $R=1, 2$ are omitted because dynamic master-worker requires at least 2 worker ranks in addition to the dedicated coordinator ($R \ge 3$), while $R=11$ and $R=13$ were not sampled in the E6b configuration matrix. In Table~\ref{tab:equal_cores_comparison}, parameter $c=25$ denotes the master-worker task dispatch chunk size (25 signature verification items per chunk request). The table compares static MPI (E2b), OpenMP close (E1c), static hybrid (E3b), dynamic master-worker (E6b), and dynamic hybrid (E10).
 
 \begin{table}[H]
 \centering\small
@@ -471,15 +474,15 @@ $R$ & $S$ [IQR] & $S$ [IQR] & $S$ [IQR] & $S$ [IQR] ($c=25$) & $S$ [IQR] & \\
 14 & 6.40 [6.16--6.51] & 5.86 [5.61--6.13] & 6.01 [5.99--6.47] & 8.15 [8.09--8.19] & 6.43 [6.14--6.50] & E6b wins ($+27.4\%$) \\
 \bottomrule
 \end{tabular}
-\caption{Speedup comparison indexed by allocated physical cores $R$. Verdicsts derived from IQR overlap.}
+\caption{Speedup comparison indexed by allocated physical cores $R$. Verdicts derived from IQR overlap.}
 \label{tab:equal_cores_comparison}
 \end{table}
 
-Key observations emerge:
+Experimental observations indicate:
 \begin{enumerate}[nosep]
-  \item \textbf{Dynamic master-worker overhead on P-cores ($R \le 6$):} In the P-core cluster, dynamic scheduling underperforms static partitioning because Rank 0 coordinates work rather than verifying signatures. Speedup per allocated core ($S/R$) for E6b drops to $0.64$--$0.75$, compared to $0.89$--$0.98$ for static MPI.
+  \item \textbf{Dynamic master-worker overhead on P-cores ($R \le 6$):} In the P-core cluster, dynamic scheduling underperforms static partitioning because Rank 0 coordinates work rather than verifying signatures. Speedup per allocated core ($S/R$) for static MPI across $R \in [3, 6]$ is $0.89$--$0.94$ ($0.94, 0.93, 0.89, 0.89$). For dynamic master-worker E6b, $S/R$ drops to $0.64$--$0.75$ ($0.64, 0.72, 0.72, 0.75$). However, evaluated strictly on active computing workers ($S / (R - 1)$), E6b achieves $0.90$--$0.97$ ($0.97, 0.96, 0.90, 0.90$), matching or slightly exceeding static efficiency. The throughput reduction is accounted for by the dedicated coordinator core performing no verification.
   \item \textbf{Dynamic recovery in heterogeneous execution ($R \ge 7$):} When E-cores join the pool, E6b outperforms static E2b (+48.9\% at $R=7$, +41.7\% at $R=8$, +35.0\% at $R=10$, +27.4\% at $R=14$). At $R=7$, E6b achieves $S = 4.99$, avoiding the barrier collapse of E2b ($S = 3.35$). However, because the coordinator occupies one core, E6b at $R=7$ remains slightly below static execution on 6 P-cores ($S = 5.32$).
-  \item \textbf{Hybrid performance:} Static hybrid (E3b) does not surpass pure MPI or OpenMP (IQRs overlap). Dynamic hybrid (E10) is systematically slower than single-threaded dynamic MPI (E6b) at all core counts because the master rank allocates $T$ idle cores (up to 25\% of the physical core budget).
+  \item \textbf{Hybrid performance:} In Table~\ref{tab:equal_cores_comparison}, static hybrid (E3b) does not universally match pure models: at $R=8$, E3b ($S = 4.02$ [4.01--4.02]) is statistically higher than both static MPI (E2b, $3.88$ [3.76--3.99]) and OpenMP close (E1c, $3.77$ [3.72--3.85]); at $R=10$, E3b ($4.80$ [4.78--4.86]) is higher than E2b ($4.72$ [4.71--4.73]) and indistinguishable from E1c ($4.69$ [4.55--4.80]); at $R=12$, E3b ($5.15$ [5.14--5.16]) is lower than E2b ($5.49$ [5.46--5.54]) and indistinguishable from E1c ($5.34$ [5.14--5.42]); at $R=14$, E3b ($6.01$ [5.99--6.47]) is indistinguishable from both E2b ($6.40$ [6.16--6.51]) and E1c ($5.86$ [5.61--6.13]). Dynamic hybrid (E10) is slower than single-threaded dynamic MPI (E6b) at all core counts. Normalized per active computing core, E10 achieves $S/(R - T) \in [0.54, 0.66]$ ($0.66, 0.63, 0.57, 0.54$ for $R=8, 10, 12, 14$) compared to $S/(R - 1) \in [0.63, 0.78]$ for E6b ($0.78, 0.71, 0.66, 0.63$). The idle coordinator cores account for part of the performance difference; the remaining 11--16\% reduction is consistent with OpenMP intra-chunk thread dispatch and fork-join overhead across small chunks ($c=50$, yielding 25 items per thread), although this mechanism was not isolated experimentally.
 \end{enumerate}
 
 \subsection{OpenMP Scheduling and Task-Based Parallelism}\label{sec:eval_openmp_sched}
@@ -493,7 +496,7 @@ Figure~\ref{fig:openmp_schedules} compares OpenMP loop scheduling clauses across
 \label{fig:openmp_schedules}
 \end{figure}
 
-Under \texttt{static} scheduling at $T = 16$, throughput is limited to $136.0$\,ksig/s ($S = 7.69$ [7.62--7.81]). In contrast, \texttt{dynamic,16} achieves $162.7$\,ksig/s ($S = 9.20$ [9.14--9.23]), a 19.6\% improvement. At $T = 20$, \texttt{dynamic,16} reaches $S = 9.89$ [9.75--9.91] compared to $S = 8.68$ [8.63--9.07] for \texttt{static} (+13.9\%). Dynamic dispatch mitigates core speed divergence by allowing P-cores to consume additional chunks while E-cores complete their initial assignments.
+Under \texttt{static} scheduling at $T = 16$, throughput is limited to $144.7$\,ksig/s ($S = 7.69$ [7.62--7.81]). In contrast, \texttt{dynamic,16} achieves $173.0$\,ksig/s ($S = 9.20$ [9.14--9.23]), a 19.6\% improvement (measured against $v_1 = 18{,}804.8$\,sig/s). At $T = 20$, \texttt{dynamic,16} reaches $S = 9.89$ [9.75--9.91] compared to $S = 8.68$ [8.53--9.14] for \texttt{static} (+13.9\%). In E5, OpenMP threads were executed with default runtime scheduling without thread pinning (\texttt{omp\_default}, unpinned), allowing thread migration, which differs from the strict \texttt{OMP\_PROC\_BIND=close} mapping of E1c (Table~\ref{tab:speedup_summary}). At $T=16$, unbound static achieves $S = 7.69$ [7.62--7.81] compared to $S = 6.68$ [6.39--6.91] under pinned close binding. Dynamic dispatch mitigates core speed divergence by allowing P-cores to consume additional chunks while E-cores complete their initial assignments.
 
 Figure~\ref{fig:taskbased_scaling} examines \texttt{taskloop} execution under varying grain sizes compared to MPI master-worker.
 
@@ -557,7 +560,7 @@ In the containerized gRPC benchmark, the total elapsed time decomposes into:
 \begin{equation}
 T_{\mathrm{wall}} = T_{\mathrm{verify}} + Gen(chunk) + Ping + \text{Residual}
 \end{equation}
-Worker verification ($T_{\mathrm{verify}}$) scales in close alignment with MPI compute time ($S_{\mathrm{compute}} = 7.43$ at $p=20$). However, $T_{\mathrm{wall}}$ includes client-side dispatch and in-container device record generation.
+Worker compute speedup ($S_{\mathrm{compute}}$) tracks native MPI within $\sim 4\%$ on small core counts ($p=2, 4, 8$). However, notable divergence occurs at $p=6$ ($4.13$ vs $5.32$, $-22.4\%$), $p=16$ ($6.26$ vs $7.31$, $-14.4\%$), and $p=20$ ($7.43$ vs $8.81$, $-15.7\%$). Because containers in benchmark E4 were not pinned to exclusive CPU cores, the cause of the compute deficits at $p \in \{6, 16, 20\}$ was not tested in isolation. However, $T_{\mathrm{wall}}$ includes client-side dispatch and in-container device record generation.
 
 To isolate the sources of latency, campaign E4c pinned each worker container to an exclusive logical CPU (Table~\ref{tab:e4c_discriminant}).
 
@@ -615,7 +618,7 @@ $n$ & $T_{\mathrm{seq}}$ & $T_{\mathrm{conc}}$ & Measured Speedup & Theoretical 
 \label{fig:pipeline_speedup}
 \end{figure}
 
-The gap between measured and theoretical speedup is 34.1\% at both $n=4$ and $n=8$. This equivalence arises algebraically from the ratio between measured speedups (1.32 and 1.58) and theoretical predictions (2.00 and 2.40). It does not indicate an empirical saturation threshold at $n=4$. The performance deficit is consistent with request queuing in the WAMP messaging layer, though this hypothesis was not instrumented in isolation. Pipelining nonetheless provides a 36.8\% runtime reduction at $n=8$ (from 5.584\,s to 3.532\,s).
+The gap between measured and theoretical speedup is 34.1\% at both $n=4$ and $n=8$. This identical gap is a numerical coincidence ($1.318 / 2.00 = 0.6588$, $1.581 / 2.40 = 0.6587$). Across 5 repetitions (with sample standard deviations $T_{\mathrm{seq}} = 0.631 \pm 0.063$\,s, $1.386 \pm 0.118$\,s, $2.635 \pm 0.110$\,s, $5.584 \pm 0.101$\,s, and $T_{\mathrm{conc}} = 0.645 \pm 0.094$\,s, $0.997 \pm 0.183$\,s, $1.999 \pm 0.097$\,s, $3.532 \pm 0.130$\,s), the data cannot confirm or refute throughput saturation at $n \ge 4$. The performance deficit is consistent with request queuing in the WAMP messaging layer, though this hypothesis was not instrumented in isolation. Pipelining nonetheless provides a 36.8\% runtime reduction at $n=8$ (from 5.584\,s to 3.532\,s).
 
 \subsection{Omission of the $F_c$ Metric}
 
