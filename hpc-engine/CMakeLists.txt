@@ -162,3 +162,13 @@ target_link_libraries(bench_single_verify
     PRIVATE OpenSSL::Crypto
 )
 
+add_executable(bench_device_gen
+    src/onboarding/bench_device_gen.cpp
+    src/onboarding/device_generator.cpp
+)
+target_include_directories(bench_device_gen PRIVATE src/onboarding)
+target_link_libraries(bench_device_gen
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
+)
+
