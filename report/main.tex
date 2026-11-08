@@ -288,9 +288,106 @@ Aggregation policies reflect the underlying concurrency model:
 \end{itemize}
 
 % =====================================================
-\section*{6. Mapping}
+\section{Mapping}\label{sec:mapping}
 
-In the MPI model, processes are launched with the \texttt{--bind-to none} option: Open MPI's default behaviour would bind each rank to a single physical core, which would prevent that rank's internal OpenMP threads from spreading across different cores and would force them to serialize, wasting part of the gain from the task+data hybrid discussed later. In the isolated benchmark, up to 32 \textit{worker} containers are mapped to as many dedicated host ports, in the range 51051--51082, so that each is individually reachable without addressing ambiguity. In the production pipeline, on the other hand, the mapping is static and fixed: the three boards registered on IoTronic correspond one to one to the three C++ workers connected on the \texttt{s4t-bridge} network, with no form of dynamic load balancing, a choice consistent with the fact that this environment is meant to measure the behaviour of the real chain as it is configured in production, not to explore alternative configurations.
+Mapping assigns agglomerated chunks to physical hardware units. Table~\ref{tab:mapping_policies} summarizes the mapping policies evaluated across concurrency paradigms, separating the structural assignment from the dispatch timing.
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{p{2.8cm}p{2.2cm}p{4.4cm}p{4.6cm}}
+\toprule
+\textbf{Setting} & \textbf{Type} & \textbf{Policy} & \textbf{Operational Reason} \\
+\midrule
+OpenMP loop & Static / Dynamic & \texttt{schedule(runtime)}, default static; dynamic and guided evaluated & Individual verification duration is nearly uniform ($CV = 12.7\%$); E5 evaluates responsiveness to hardware heterogeneity. \\
+MPI static partition & Static & Block partition with remainder, one chunk per rank & Zero inter-rank communication during computation; load imbalance $\le 1$ signature. \\
+MPI master-worker & Dynamic & Rank 0 coordinates; workers request chunks dynamically & Absorbs performance disparity across heterogeneous cores; master consumes one core without computing. \\
+OpenMP \texttt{taskloop} & Dynamic & Tasks of \texttt{grainsize} iterations scheduled via internal task queue & Task-based shared-memory alternative to worksharing loops. \\
+gRPC isolated & Static & Block partition with remainder dispatched to containers & Uniform containerized services on a shared host. \\
+Production pipeline & Dynamic lease, static split & Dynamic node selection via on-chain trust lease; sequential stage chaining & Boards join and leave dynamically; execution follows fixed three-stage functional chain. \\
+\bottomrule
+\end{tabular}
+\caption{Mapping policies across execution paradigms.}
+\label{tab:mapping_policies}
+\end{table}
+
+\subsection{Mapping to Hardware}\label{sec:mapping_hardware}
+
+The Intel Core i7-12700H host features two distinct core architectures:
+\begin{itemize}[nosep]
+  \item 6 P-cores with SMT: physical cores 0--5, mapped to logical CPUs $\{0, 2, 4, 6, 8, 10\}$ (primary hardware threads) and $\{1, 3, 5, 7, 9, 11\}$ (secondary SMT threads).
+  \item 8 E-cores without SMT: physical cores 6--13, mapped to logical CPUs $\{12, 13, 14, 15, 16, 17, 18, 19\}$.
+\end{itemize}
+
+Experiments in earlier stages demonstrated that thread and rank allocation significantly influences observed speedup. Table~\ref{tab:binding_hardware} details the exact binding configurations employed across the benchmark campaigns.
+
+\begin{table}[H]
+\centering\footnotesize
+\begin{tabular}{lp{2.6cm}ccp{4.6cm}cp{2.6cm}}
+\toprule
+\textbf{Exp.} & \textbf{Model} & \textbf{Ranks} & \textbf{Threads} & \textbf{Binding / Affinization Flags} & \textbf{Cores} & \textbf{Core Sharing} \\
+\midrule
+E1 & OpenMP unbound & 1 & $1$--$20$ & OS default scheduling (no \texttt{OMP\_PLACES}) & $1$--$14$ & Uncontrolled migration \\
+E1b/c & OpenMP close & 1 & $1$--$20$ & \texttt{OMP\_PLACES=cores}, \texttt{OMP\_PROC\_BIND=close} & $1$--$14$ & Fills P then E then SMT \\
+E1c & OpenMP spread & 1 & $1$--$20$ & \texttt{OMP\_PLACES=cores}, \texttt{OMP\_PROC\_BIND=spread} & $1$--$14$ & Alternates P and E \\
+E2 & MPI pure (historical) & $1$--$20$ & 1 & \texttt{--use-hwthread-cpus --bind-to core} & $1$--$14$ & Ranks 0 and 1 share Core 0 \\
+E2b & MPI pure (corrected) & $1$--$20$ & 1 & \texttt{--map-by core --bind-to core} & $1$--$14$ & One rank per physical core \\
+E3 & Hybrid (historical) & $2$--$10$ & $2$--$10$ & \texttt{--use-hwthread-cpus --bind-to hwthread} & $1$--$14$ & Uncontrolled SMT sharing \\
+E3b & Hybrid (corrected) & $4$--$7$ & $2$--$3$ & \texttt{--map-by slot:PE=T --bind-to core} & $8$--$14$ & $T$ dedicated cores per rank \\
+E6 & Master-Worker & $4$--$14$ & 1 & \texttt{--use-hwthread-cpus --bind-to hwthread} & $4$--$14$ & Master shares Core 0 with W0 \\
+E6b & Master-Worker & $3$--$14$ & 1 & \texttt{--map-by core --bind-to core} & $3$--$14$ & Master isolated on Core 0 \\
+E10 & Dynamic Hybrid & $4$--$7$ & $2$--$3$ & \texttt{--map-by slot:PE=T --bind-to core} & $8$--$14$ & Master allocates $T$ idle cores \\
+\bottomrule
+\end{tabular}
+\caption{Hardware binding parameters and physical core mapping across experiments.}
+\label{tab:binding_hardware}
+\end{table}
+
+The historical benchmark E2 used \texttt{--bind-to core} without \texttt{--map-by core}. Open MPI assigned ranks by slot, placing both Rank 0 and Rank 1 on physical Core 0 (logical CPUs 0 and 1), which provoked severe SMT execution unit contention ($S = 1.24$ at $p=2$). In campaign E2b, introducing \texttt{--map-by core --bind-to core} mapped Rank 0 to Core 0 and Rank 1 to Core 1, raising speedup to $S = 1.93$ ($E = 0.97$). A similar defect affected historical E6: the master coordinator shared Core 0 with worker 0, causing busy-polling contention that degraded $S$ to 1.97 at $R=4$. Isolating the master on a dedicated physical core in E6b resolved this issue.
+
+\subsection{Static Against Dynamic Mapping}
+
+The trade-off between static and dynamic mapping depends directly on core homogeneity:
+\begin{itemize}[nosep]
+  \item \textbf{Homogeneous regime ($R \le 6$):} When execution is confined to identical P-cores, static partition achieves maximum efficiency. Dynamic master-worker schemes underperform because the coordinator thread consumes a full physical core without performing verifications.
+  \item \textbf{Heterogeneous regime ($R \ge 7$):} When slow E-cores enter the worker pool, static partitioning is bottlenecked by the slowest worker at the barrier. Dynamic scheduling allows faster P-cores to process multiple chunks while E-cores process fewer, yielding substantial throughput gains.
+\end{itemize}
+
+% =====================================================
+\section{Hybrid Implementation: Processes and Threads}\label{sec:hybrid}
+
+The hybrid architecture combines task-level and data-level parallelism across two execution tiers.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[every node/.style={font=\small},
+  proc/.style={draw,rounded corners,minimum width=3.2cm,minimum height=2.6cm,align=center},
+  th/.style={draw,minimum width=0.55cm,minimum height=0.5cm,fill=gray!15},
+  arr/.style={-{Latex[length=2mm]},thick}]
+\node[proc] (p0) at (0,0) {};
+\node[proc] (p1) at (4.2,0) {};
+\node[proc] (p2) at (8.4,0) {};
+\node at (0,1.0) {\textbf{Rank 0}}; \node at (4.2,1.0) {\textbf{Rank 1}}; \node at (8.4,1.0) {\textbf{Rank $R{-}1$}};
+\foreach \x in {0,4.2,8.4}{
+  \foreach \k in {-1.0,-0.33,0.33,1.0} \node[th] at (\x+\k,-0.2) {};
+  \node at (\x,-0.9) {$T$ OpenMP threads};
+}
+\node at (6.3,-0.2) {$\cdots$};
+\node[draw,rounded corners,minimum width=8.5cm,minimum height=0.7cm] (red) at (4.2,-2.5) {\texttt{MPI\_Reduce}: \texttt{MPI\_SUM} (counts) and \texttt{MPI\_MAX} (times)};
+\foreach \x in {0,4.2,8.4} \draw[arr] (\x,-1.3)--(red.north -| \x,0);
+\end{tikzpicture}
+\caption{Two-tier hybrid execution model: $R$ MPI ranks each launching $T$ OpenMP threads over an agglomerated chunk.}
+\label{fig:hybrid_architecture}
+\end{figure}
+
+The hybrid implementation operates as follows:
+\begin{itemize}[nosep]
+  \item \textbf{Inter-process level (MPI):} The total batch of $N$ signatures is partitioned into $R$ chunks using the remainder rule. Each process receives its chunk parameters and coordinates completion via collective reductions.
+  \item \textbf{Intra-process level (OpenMP):} Within each process, an OpenMP worksharing loop divides the chunk across $T$ worker threads. Each iteration allocates an independent \texttt{EVP\_MD\_CTX} verification context; threads share no mutable state, eliminating locking.
+  \item \textbf{Substrate interface:} MPI is initialized via \texttt{MPI\_Init\_thread} requesting \texttt{MPI\_THREAD\_FUNNELED}. The program verifies that the runtime satisfies this level. All MPI collectives occur exclusively on the master thread outside parallel regions.
+  \item \textbf{Distributed mapping:} In the containerized gRPC deployment, each worker process receives a \texttt{num\_threads} parameter in the RPC message and executes the identical OpenMP loop.
+\end{itemize}
+
+The nominal concurrency of a hybrid configuration is $P_{\mathrm{eff}} = R \times T$. Under dedicated physical core binding (E3b), $R \times T$ cores are assigned without hardware thread oversubscription.
 
 % =====================================================
 \section*{7. Performance evaluation}
