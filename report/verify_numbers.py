@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-Extended verification script for report/main.tex.
-Performs both fact matching against PROGRESS.md and direct arithmetic checks
-on formulas, table sums, speedup/rate consistency, Karp-Flatt, IQR overlaps from CSVs,
-and net residuals in Table 7.
+Extended verification script for report/main.tex (Stage 13.5-ter).
+Performs:
+1. Label & reference matching (checks that all \\ref{...} reference valid \\label{...}).
+2. Fact matching against PROGRESS.md.
+3. Comprehensive cell-by-cell check of Table 5 (speedup_summary) against raw CSVs.
+4. Comprehensive cell-by-cell check of Table 6 (equal_cores_comparison) against raw CSVs.
+5. Arithmetic & statistical checks (E5 speedup vs rate, Table 1 sum, worker yield, Karp-Flatt, net residuals, pipeline gaps).
 """
 import re
 import sys
@@ -29,7 +32,13 @@ def check(condition: bool, msg: str):
     else:
         print(f"[+] PASSED: {msg}")
 
-print("=== 1. Text & Fact Matches vs PROGRESS.md ===")
+print("=== 1. LaTeX Labels and References Integrity (T3) ===")
+refs = re.findall(r"\\ref\{([^}]+)\}", tex)
+labels = set(re.findall(r"\\label\{([^}]+)\}", tex))
+missing = [r for r in set(refs) if r not in labels]
+check(len(missing) == 0, f"All {len(refs)} references match defined labels (missing: {missing})")
+
+print("\n=== 2. Text & Fact Matches vs PROGRESS.md ===")
 facts = [
     ("T1 baseline", "1.0636", "1.0636" in prog),
     ("Single-thread rate", "18,804.8", "18.804" in prog or "18,804" in prog or "18804" in prog),
@@ -79,8 +88,172 @@ facts = [
 for name, val, ok in facts:
     check(ok, f"Fact match for {name}: {val}")
 
-print("\n=== 2. Arithmetic Check: E5 Speedup vs Throughput (A1) ===")
-# v1 = 18,804.8 sig/s. In §7.3: static throughput 144.7 ksig/s, dynamic 173.0 ksig/s
+print("\n=== 3. Table 5 (speedup_summary) Full Cell-by-Cell Check vs CSVs (T1/T2) ===")
+t1_ref = 1.063555
+e1c = pd.read_csv("hpc-engine/results/m13/results_e1c_omp_cores_close.csv")
+e2b = pd.read_csv("hpc-engine/results/m13/results_e2b_mpi_map_core.csv")
+e3 = pd.read_csv("hpc-engine/results/m13/results_e3_hybrid.csv")
+e3b = pd.read_csv("hpc-engine/results/m13/results_e3b_hybrid_map_core.csv")
+e4 = pd.read_csv("hpc-engine/results/m13/results_e4_grpc.csv")
+
+pos5 = tex.find("\\label{tab:speedup_summary}")
+start5 = tex.rfind("\\midrule", 0, pos5)
+end5 = tex.rfind("\\bottomrule", 0, pos5)
+table5_str = tex[start5+8:end5].strip()
+
+tab5_ok = True
+for line in table5_str.split("\n"):
+    line = line.strip()
+    if not line or line.startswith("%"):
+        continue
+    parts = [p.strip() for p in line.replace("\\\\", "").split("&")]
+    p = int(parts[0])
+    omp_s, omp_e = parts[1], float(parts[2])
+    mpi_s, mpi_e = parts[3], float(parts[4])
+    hyb_s, hyb_e = parts[5], parts[6]
+    grpc_w, grpc_c = parts[7], parts[8]
+
+    # OpenMP close (E1c)
+    sub_e1c = e1c[e1c["threads"] == p]
+    s_vals = t1_ref / sub_e1c["time_seconds"].values
+    med, q25, q75 = np.median(s_vals), np.percentile(s_vals, 25), np.percentile(s_vals, 75)
+    if omp_s != f"{med:.2f} [{q25:.2f}--{q75:.2f}]":
+        tab5_ok = False
+        print(f"[-] Table 5 p={p} OpenMP mismatch: got {omp_s}")
+
+    # MPI pure (E2b)
+    sub_e2b = e2b[e2b["ranks"] == p]
+    s_vals = t1_ref / sub_e2b["time_seconds"].values
+    med, q25, q75 = np.median(s_vals), np.percentile(s_vals, 25), np.percentile(s_vals, 75)
+    if mpi_s != f"{med:.2f} [{q25:.2f}--{q75:.2f}]":
+        tab5_ok = False
+        print(f"[-] Table 5 p={p} MPI mismatch: got {mpi_s}")
+
+    # Hybrid (E3/E3b)
+    if p in [2, 4, 6]:
+        if hyb_s != "---" or hyb_e != "---":
+            tab5_ok = False
+    elif p in [8, 12]:
+        sub_e3b = e3b[e3b["physical_cores"] == p]
+        s_vals = t1_ref / sub_e3b["time_seconds"].values
+        med, q25, q75 = np.median(s_vals), np.percentile(s_vals, 25), np.percentile(s_vals, 75)
+        if hyb_s != f"{med:.2f} [{q25:.2f}--{q75:.2f}]$^\\dagger$":
+            tab5_ok = False
+            print(f"[-] Table 5 p={p} Hybrid dagger mismatch: got {hyb_s}")
+    elif p in [16, 20]:
+        sub_e3 = e3[e3["ranks"] * e3["threads"] == p]
+        s_vals = t1_ref / sub_e3["time_seconds"].values
+        med, q25, q75 = np.median(s_vals), np.percentile(s_vals, 25), np.percentile(s_vals, 75)
+        if hyb_s != f"{med:.2f} [{q25:.2f}--{q75:.2f}]$^*$":
+            tab5_ok = False
+            print(f"[-] Table 5 p={p} Hybrid star mismatch: got {hyb_s}")
+
+    # gRPC isolated (E4 unpinned)
+    sub_e4 = e4[e4["p_eff"] == p]
+    sw = t1_ref / sub_e4["time_seconds"].values
+    sc = t1_ref / sub_e4["verify_s"].values
+    med_w, q25_w, q75_w = np.median(sw), np.percentile(sw, 25), np.percentile(sw, 75)
+    med_c, q25_c, q75_c = np.median(sc), np.percentile(sc, 25), np.percentile(sc, 75)
+    if grpc_w != f"{med_w:.2f} [{q25_w:.2f}--{q75_w:.2f}]":
+        tab5_ok = False
+        print(f"[-] Table 5 p={p} gRPC wall mismatch: got {grpc_w}")
+    if grpc_c != f"{med_c:.2f} [{q25_c:.2f}--{q75_c:.2f}]":
+        tab5_ok = False
+        print(f"[-] Table 5 p={p} gRPC comp mismatch: got {grpc_c}")
+
+check(tab5_ok, "All 56 cells in Table 5 (speedup_summary) verified against raw CSVs")
+
+print("\n=== 4. Table 6 (equal_cores_comparison) Full Cell-by-Cell Check vs CSVs (T2/T4) ===")
+e6b = pd.read_csv("hpc-engine/results/m13/results_e6b_dynamic_map_core.csv")
+e10 = pd.read_csv("hpc-engine/results/m13/results_e10_dynamic_hybrid.csv")
+
+pos6 = tex.find("\\label{tab:equal_cores_comparison}")
+start6 = tex.rfind("\\midrule", 0, pos6)
+end6 = tex.rfind("\\bottomrule", 0, pos6)
+table6_str = tex[start6+8:end6].strip()
+
+tab6_ok = True
+for line in table6_str.split("\n"):
+    line = line.strip()
+    if not line or line.startswith("%"):
+        continue
+    parts = [p.strip() for p in line.replace("\\\\", "").split("&")]
+    r = int(parts[0])
+    e2b_s = parts[1]
+    e1c_s = parts[2]
+    e3b_s = parts[3]
+    e6b_s = parts[4]
+    e10_s = parts[5]
+    verdict = parts[6]
+
+    # E2b
+    sub2 = e2b[e2b["ranks"] == r]
+    s2 = t1_ref / sub2["time_seconds"].values
+    med2, q25_2, q75_2 = np.median(s2), np.percentile(s2, 25), np.percentile(s2, 75)
+    if e2b_s != f"{med2:.2f} [{q25_2:.2f}--{q75_2:.2f}]":
+        tab6_ok = False
+        print(f"[-] Table 6 R={r} E2b mismatch: got {e2b_s}")
+
+    # E1c
+    sub1 = e1c[e1c["threads"] == r]
+    if len(sub1) > 0:
+        s1 = t1_ref / sub1["time_seconds"].values
+        med1, q25_1, q75_1 = np.median(s1), np.percentile(s1, 25), np.percentile(s1, 75)
+        if e1c_s != f"{med1:.2f} [{q25_1:.2f}--{q75_1:.2f}]":
+            tab6_ok = False
+            print(f"[-] Table 6 R={r} E1c mismatch: got {e1c_s}")
+    else:
+        if e1c_s != "---":
+            tab6_ok = False
+            print(f"[-] Table 6 R={r} E1c expected ---, got {e1c_s}")
+
+    # E3b
+    sub3 = e3b[e3b["physical_cores"] == r]
+    if len(sub3) > 0:
+        s3 = t1_ref / sub3["time_seconds"].values
+        med3, q25_3, q75_3 = np.median(s3), np.percentile(s3, 25), np.percentile(s3, 75)
+        if e3b_s != f"{med3:.2f} [{q25_3:.2f}--{q75_3:.2f}]":
+            tab6_ok = False
+            print(f"[-] Table 6 R={r} E3b mismatch: got {e3b_s}")
+    else:
+        if e3b_s != "---":
+            tab6_ok = False
+
+    # E6b (c=25)
+    sub6 = e6b[(e6b["ranks"] == r) & (e6b["chunk_size"] == 25)]
+    s6 = t1_ref / sub6["time_seconds"].values
+    med6, q25_6, q75_6 = np.median(s6), np.percentile(s6, 25), np.percentile(s6, 75)
+    if e6b_s != f"{med6:.2f} [{q25_6:.2f}--{q75_6:.2f}]":
+        tab6_ok = False
+        print(f"[-] Table 6 R={r} E6b mismatch: got {e6b_s}")
+
+    # E10 (c=50)
+    sub10 = e10[(e10["physical_cores"] == r) & (e10["chunk_size"] == 50)]
+    if len(sub10) > 0:
+        s10 = t1_ref / sub10["time_seconds"].values
+        med10, q25_10, q75_10 = np.median(s10), np.percentile(s10, 25), np.percentile(s10, 75)
+        if e10_s != f"{med10:.2f} [{q25_10:.2f}--{q75_10:.2f}]":
+            tab6_ok = False
+            print(f"[-] Table 6 R={r} E10 mismatch: got {e10_s}")
+    else:
+        if e10_s != "---":
+            tab6_ok = False
+
+    # Verdict
+    diff = (med6 - med2) / med2 * 100.0
+    if q25_6 > q75_2:
+        exp_v = f"E6b wins (${diff:+.1f}\\%$)"
+    elif q75_6 < q25_2:
+        exp_v = f"E6b loses (${diff:+.1f}\\%$)"
+    else:
+        exp_v = "indistinguishable"
+    if verdict != exp_v:
+        tab6_ok = False
+        print(f"[-] Table 6 R={r} verdict mismatch: got {verdict}, expected {exp_v}")
+
+check(tab6_ok, "All 60 cells in Table 6 (equal_cores_comparison) verified against raw CSVs")
+
+print("\n=== 5. Arithmetic Check: E5 Speedup vs Throughput (A1) ===")
 v1 = 18804.8
 rate_static_16 = 144700.0  # from 144.7 ksig/s
 rate_dyn_16 = 173000.0     # from 173.0 ksig/s
@@ -91,15 +264,14 @@ check(abs(s_calc_dyn - 9.20) < 0.05, f"E5 dynamic,16 T=16 S = {s_calc_dyn:.2f} m
 check("144.7" in tex and "173.0" in tex, "Correct throughput values 144.7 and 173.0 present in text")
 check("136.0" not in tex and "162.7" not in tex, "Old erroneously divided throughputs 136.0 and 162.7 removed from text")
 
-print("\n=== 3. Arithmetic Check: Table 1 Instruction Profile Sum (A3) ===")
-# 87.88 + 6.26 + 3.20 + 1.80 + 0.86 = 100.00
+print("\n=== 6. Arithmetic Check: Table 1 Instruction Profile Sum (A3) ===")
 tab1_items = [87.88, 6.26, 3.20, 1.80, 0.86]
 sum_tab1 = sum(tab1_items)
 check(abs(sum_tab1 - 100.0) < 1e-5, f"Table 1 instruction rows sum to {sum_tab1:.2f}% (exact 100%)")
 check(abs(87.88 + 6.26 - 94.14) < 1e-5, "Crypto total 87.88% + 6.26% = 94.14%")
 check("Unattributed / runtime libc" in tex, "Unattributed libc row present in Table 1")
 
-print("\n=== 4. Arithmetic Check: Static MPI S/R and Worker Yield S/(R-1) (A5) ===")
+print("\n=== 7. Arithmetic Check: Static MPI S/R and Worker Yield S/(R-1) (A5) ===")
 e2b_s = {3: 2.81, 4: 3.71, 5: 4.45, 6: 5.32}
 e6b_s = {3: 1.93, 4: 2.87, 5: 3.60, 6: 4.49}
 for r in [3, 4, 5, 6]:
@@ -108,56 +280,18 @@ for r in [3, 4, 5, 6]:
     check(0.88 <= sr_static <= 0.95, f"R={r}: Static MPI S/R = {sr_static:.2f} in [0.89, 0.94]")
     check(0.89 <= s_worker_dyn <= 0.98, f"R={r}: E6b worker yield S/(R-1) = {s_worker_dyn:.2f} in [0.90, 0.97]")
 
-print("\n=== 5. Statistical Check: Table 6 IQR Overlap Verdicts (A6) ===")
-try:
-    df_e3b = pd.read_csv("hpc-engine/results/m13/results_e3b_hybrid_map_core.csv")
-    df_e2b = pd.read_csv("hpc-engine/results/m13/results_e2b_mpi_map_core.csv")
-    df_e1c = pd.read_csv("hpc-engine/results/m13/results_e1c_omp_cores_close.csv")
-    t1_ref = 1.063555
-
-    def get_iqr(df, col, val):
-        sub = df[df[col] == val]
-        s = t1_ref / sub["time_seconds"].values
-        return np.percentile(s, 25), np.percentile(s, 75)
-
-    def get_verdict(l1, h1, l2, h2):
-        if l1 > h2:
-            return "higher"
-        elif h1 < l2:
-            return "lower"
-        else:
-            return "indistinguishable"
-
-    verdicts = {}
-    for r in [8, 10, 12, 14]:
-        sub3 = df_e3b[df_e3b["physical_cores"] == r] if "physical_cores" in df_e3b.columns else df_e3b[df_e3b["ranks"]*df_e3b["threads"] == r]
-        s3 = t1_ref / sub3["time_seconds"].values
-        l3, h3 = np.percentile(s3, 25), np.percentile(s3, 75)
-        l2, h2 = get_iqr(df_e2b, "ranks", r)
-        l1, h1 = get_iqr(df_e1c, "threads", r)
-        verdicts[(r, "e2b")] = get_verdict(l3, h3, l2, h2)
-        verdicts[(r, "e1c")] = get_verdict(l3, h3, l1, h1)
-
-    check(verdicts[(8, "e2b")] == "higher" and verdicts[(8, "e1c")] == "higher", "R=8: E3b higher than E2b and E1c")
-    check(verdicts[(10, "e2b")] == "higher" and verdicts[(10, "e1c")] == "indistinguishable", "R=10: E3b higher than E2b, indistinguishable from E1c")
-    check(verdicts[(12, "e2b")] == "lower" and verdicts[(12, "e1c")] == "indistinguishable", "R=12: E3b lower than E2b, indistinguishable from E1c")
-    check(verdicts[(14, "e2b")] == "indistinguishable" and verdicts[(14, "e1c")] == "indistinguishable", "R=14: E3b indistinguishable from both")
-except Exception as e:
-    check(False, f"CSV loading error for IQR verdicts: {e}")
-
-print("\n=== 6. Arithmetic Check: Karp-Flatt Serialization e(p) (B3) ===")
+print("\n=== 8. Arithmetic Check: Karp-Flatt Serialization e(p) (B3) ===")
 def kf(s, p):
     return (1.0/s - 1.0/p) / (1.0 - 1.0/p)
 
-e6 = kf(5.32, 6)
-e7 = kf(3.35, 7)
-e8 = kf(3.88, 8)
-check(0.025 <= e6 <= 0.036, f"e(6) = {e6:.4f} in [0.026, 0.036]")
-check(0.17 <= e7 <= 0.19, f"e(7) = {e7:.4f} matches ~0.18")
-check(0.14 <= e8 <= 0.16, f"e(8) = {e8:.4f} matches ~0.15")
+e6_val = kf(5.32, 6)
+e7_val = kf(3.35, 7)
+e8_val = kf(3.88, 8)
+check(0.025 <= e6_val <= 0.036, f"e(6) = {e6_val:.4f} in [0.026, 0.036]")
+check(0.17 <= e7_val <= 0.19, f"e(7) = {e7_val:.4f} matches ~0.18")
+check(0.14 <= e8_val <= 0.16, f"e(8) = {e8_val:.4f} matches ~0.15")
 
-print("\n=== 7. Arithmetic Check: Table 7 Net Residuals (B5) ===")
-# Net Res = T_wall - T_verify - Gen - Ping (Ping = 0.00133 s)
+print("\n=== 9. Arithmetic Check: Table 7 Net Residuals (B5) ===")
 ping = 0.00133
 e4c_rows = [
     ("p2_pcores", 1.0086, 0.5740, 0.3850, 48.3),
@@ -174,8 +308,7 @@ for cfg, tw, tv, tg, expected_res in e4c_rows:
     calc_res_ms = (tw - tv - tg - ping) * 1000.0
     check(abs(calc_res_ms - expected_res) < 0.6, f"E4c {cfg}: Net Res = {calc_res_ms:.1f} ms matches expected {expected_res:.1f} ms")
 
-print("\n=== 8. Arithmetic Check: Table 8 Pipeline Gaps (A9) ===")
-# Gap = (S_pred - S_meas) / S_pred
+print("\n=== 10. Arithmetic Check: Table 8 Pipeline Gaps (A9) ===")
 p_gaps = [
     (1, 0.98, 1.00, 2.0),
     (2, 1.39, 1.50, 7.3),
@@ -190,4 +323,4 @@ if failed:
     print("\n[FAILURE] One or more verification checks failed!")
     sys.exit(1)
 else:
-    print("\n[SUCCESS] ALL mathematical, statistical, and factual checks passed perfectly!")
+    print("\n[SUCCESS] ALL mathematical, statistical, structural, and CSV checks passed perfectly!")

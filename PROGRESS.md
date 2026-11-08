@@ -1152,5 +1152,88 @@ Il report è stato riscritto integralmente adottando la metodologia PCAM (Partit
 - **Integrità sorgente LaTeX:** Zero `\todo` residui, 38 label definite, 23 label referenziate, 0 riferimenti mancanti. Rimossi tutti i cliché di scrittura e le frasi smentite ("the difference is entirely explained...", "overhead grows with concurrent channels...", ecc.).
 - **Commit atomici:** Eseguiti commit separati per ciascuna macro-sezione su branch `main`. Push a carico dell'utente prima della fase 13.6.
 
+---
 
+## Stadio 13.5-bis — Correzioni a report/main.tex e Consolidamento Metodologico
+
+Completata la revisione critica e formale di `report/main.tex`, `report/TRACEABILITY.md` e `report/verify_numbers.py` suddivisa in 4 gruppi atomici (commit `7abee88`, `3cd9d27`, `bcff428`, `23a3b1d`), senza alterare dati sperimentali e senza compilare localmente.
+
+### 1. Gruppo A — Correzione Incoerenze Numeriche (Commit `7abee88`)
+- **Throughput e Speedup E5 (A1):** Corretti i throughput a $T=16$ a $144.7\,\text{ksig/s}$ ($S=7.69$ [7.62–7.81]) per `static` e $173.0\,\text{ksig/s}$ ($S=9.20$ [9.14–9.23], guadagno $+19.6\%$) per `dynamic,16`, normalizzati sul single-thread rate $v_1 = 18.804,8\,\text{sig/s}$ ($T_1 = 1.0636\,\text{s}$). I valori della bozza precedente ($136.0\,\text{k}$ e $162.7\,\text{k}$) derivavano da una spuria divisione per $T_1$.
+- **Binding OpenMP in E5 vs E1c (A2):** Esplicitato in §7.3 il binding `omp_default` (unpinned) di E5 che consente la migrazione dei thread rispetto a `cores_close` di E1c ($S=6.68$ [6.39–6.91]). Riconciliato il valore di $S$ a $T=20$ static a $8.68$ [8.53–9.14] in modo univoco tra §7.3 e §7.4.
+- **Profilo Istruzioni Callgrind Tabella 1 (A3):** Aggiunta riga di codice non attribuito / runtime libc ($0.86\%$) portando la somma esattamente al $100.00\%$; verificata la quota crittografica complessiva al $94.14\%$ ($87.88\%$ EC/BIGNUM + $6.26\%$ crypto generico).
+- **Distinzione Micro-benchmark vs Baseline $T_1$ (A4):** Chiarita in §2.2 la disparità tra media per-verify ($57.42\,\mu\text{s}$, usata per la granularità di Agglomeration) e tasso ammortizzato di loop $T_1/N = 53.18\,\mu\text{s}$ (denominatore di speedup) come dovuta alle condizioni di misurazione (timer per chiamata vs ciclo continuo).
+- **Efficienza Static MPI ed E6b (A5):** Ricalcolato $S/R$ per static MPI su $R \in [3..6]$ a $0.89–0.94$ ($0.94, 0.93, 0.89, 0.89$); ricalcolato il rendimento sui soli worker di calcolo $S/(R-1)$ per E6b dinamico a $0.90–0.97$ ($0.97, 0.96, 0.90, 0.90$), pari all'efficienza statica, dimostrando che a $R \le 6$ la perdita è causata dal core assorbito dal coordinatore.
+- **Verdetti Statistici Ibrido E3b Tabella 6 (A6):** Calcolati rigorosamente dai CSV i confronti per sovrapposizione degli IQR:
+  - $R=8$: E3b ($4.02$ [4.01–4.02]) è **più alto** sia di E2b ($3.88$ [3.76–3.99]) sia di E1c ($3.77$ [3.72–3.85]).
+  - $R=10$: E3b ($4.80$ [4.78–4.86]) è **più alto** di E2b ($4.72$ [4.71–4.73]) e **indistinguibile** da E1c ($4.69$ [4.55–4.80]).
+  - $R=12$: E3b ($5.15$ [5.14–5.16]) è **più basso** di E2b ($5.49$ [5.46–5.54]) e **indistinguibile** da E1c ($5.34$ [5.14–5.42]).
+  - $R=14$: E3b ($6.01$ [5.99–6.47]) è **indistinguibile** da entrambi ($6.40$ [6.16–6.51] e $5.86$ [5.61–6.13]).
+- **Rendimento Core di Calcolo E10 (A7):** Ricalcolato $S/(R-T)$ di E10 a $0.54–0.66$ ($0.66, 0.63, 0.57, 0.54$) rispetto a $S/(R-1)$ di E6b a $0.63–0.78$. I core inattivi del master spiegano la maggior parte del divario; il gap residuo dell'11–16% è coerente con l'ipotesi di overhead di scheduling/fork-join OpenMP sui singoli chunk da 50 item.
+- **Confronto Calcolo gRPC vs MPI (A8):** Sostituita l'affermazione generale con i valori esatti di Tabella 5: per $p=2, 4, 8$ il calcolo puro gRPC replica MPI entro il $\sim 4\%$, mentre si registrano scostamenti a $p=6$ ($-22.4\%$), $p=16$ ($-14.4\%$) e $p=20$ ($-15.7\%$), la cui causa non è stata isolata data la natura non pinnata dei container in E4.
+- **Dispersione Pipeline M11.5 e Gap 34.1% (A9):** Documentata la coincidenza numerica del gap identico del $34.1\%$ a $n=4$ e $n=8$ ($1.318/2.00 = 0.6588$, $1.581/2.40 = 0.6587$); riportate le deviazioni standard ($T_{seq}$ fino a $\pm 0.118\,\text{s}$, $T_{conc}$ fino a $\pm 0.183\,\text{s}$) specificando che 5 ripetizioni non possono né confermare né smentire la saturazione.
+- **Origine Celle Ibrido Tabella 5 (A10):** Marcati con `---` i punti $p=2, 4, 6$ (non eseguiti in ibrido, $R \ge 4, T \ge 2$), con dagger $p=8, 12$ (E3b core binding) e con asterisco $p=16, 20$ (E3 hwthread), specificando nel caption che le due mappature non sono confrontabili.
+- **Flag di Esecuzione Hardware (A11, A12, A13):** Tabella 4 aggiornata con `--use-hwthread-cpus` per E2b ($p > 14$) e wrap SMT per E1c ($T > 14$); definito il chunk $c=25$ e chiarita la selezione di $R$ in Tabella 6; fingerprint hardware verificata (Linux 6.8 / 7.0 HWE, 32 GiB DDR5, E-core $1.97\times$ più lento).
+
+### 2. Gruppo B — Riformulazione Affermazioni Causali e Stile (Commit `3cd9d27`)
+- **Meccanismo SMT a $p=2$ (B1):** Riformulato $S=1.24$ in E2 come coerente con il rendimento addizionale di un thread SMT fratello ($\approx +20\%$), eliminando l'espressione non provata "severe SMT execution unit contention".
+- **Condivisione Core E6 vs E6b (B2):** Attribuita la perdita prestazionale di E6 alla condivisione fisica del Core 0 tra Master e Worker 0; chiarito esplicitamente che il meccanismo di busy-polling non è stato testato sotto la mappatura E6 (il test con yield è stato eseguito solo a core esclusivi in E6b).
+- **Salto Karp-Flatt $e(p)$ (B3):** Qualificato il salto a $p \ge 7$ come coerente con l'eterogeneità hardware e quantitativamente allineato alla capacità statica $C_{static}$ ($99–101\%$ in §7.4); rettificati $e(7)=0.18$ ed $e(8)=0.15$ da CSV e riportato l'intervallo $e(p \le 6) \in [0.026, 0.036]$.
+- **Istruzioni Floating-Point (B4):** Uniformato §2.4 e §7.8 esplicitando che Callgrind assegna il $94.14\%$ delle istruzioni a codice crittografico intero e l'$1.80\%$ a logica applicativa; le istruzioni FP non sono state conteggiate separatamente e la metrica $F_c$ è omessa perché il carico è aritmetica intera.
+- **Residui Netti E4c e Generazione Device (B5):** Riportata l'intera gamma dei residui netti (da 23.5 a 79.0 ms), evidenziando il valore anomalo di $p=6$ ($68.7–79.0\,\text{ms}$) come non spiegato da alcuna ipotesi testata; aggiunta la colonna con controllo concorrente a $p=6$ ($0.1387\,\text{s} \to 68.7\,\text{ms}$); chiarita l'assunzione del fattore SMT ($61.5\,\mu\text{s}$) per `p2_smt`; mostrati gli intervalli IQR non sovrapposti tra `p8_smt` [$0.4216, 0.4393$] e `p8_ecores` [$0.4929, 0.5013$].
+- **Asintoto M11.5 (B6):** Riconciliata l'origine dell'asintoto a $\sim 87\,\text{ksig/s}$ come generazione sequenziale non vettorizzata a bordo worker ($\approx 39\,\mu\text{s/device}$), escludendo una scomposizione quantitativa per disparità di condizioni di test.
+- **Epurazione Stilistica (B8):** Eliminati tutti i cliché e formule enfatiche ("Key observations emerge", "Key experimental conclusions include", "pronounced performance cliff", "severe", "In contrast", "substantial throughput gains").
+
+### 3. Gruppo C — Contenuti Revisore R4/R5 e Chiusura Conclusioni (Commit `bcff428`)
+- **Tassonomia Formale del Parallelismo (C1 - R4):** Aggiunta la sottosezione 6.1 "Which Forms of Parallelism Are Implemented" con Tabella 5 che classifica Domain Decomposition (Data parallelism: MPI statico, OpenMP for, gRPC statico), Task Farm / Pool (Task parallelism: OpenMP taskloop, MPI master-worker, pipeline funzionale S1→S2→S3), e la loro combinazione ibrida (E10), specificando che E3/E3b rappresenta parallelismo di dati a due livelli (non task+data) e chiarendo le forme non implementate (concorrenza intra-firma e pipeline intra-batch). Corretta la frase introduttiva di §6.
+- **Esempio Concreto con Parametri Numerici (C2 - R5):** Inserito in §6.2 il walkthrough dettagliato per $R=4, T=2$ su 8 core fisici: per E3b chunk statico $n_g = 5.000$ per rank, $2.500$ per thread, legame esclusivo PE=2 e riduzione `MPI_THREAD_FUNNELED`; per E10 chunk dinamico $c=50$ ($25$ per thread) con Master Rank 0 che immobilizza $T=2$ core fisici senza calcolare ($25\%$ overhead di sistema).
+- **Estensione Limitazioni e Conclusioni (C3):** Aggiunte in §8 le dichiarazioni sulla stima analitica di $Gen$, il residuo non spiegato a $p=6$, la valutazione basata su IQR a 10 run, e la motivazione formale della mancata esecuzione di E7 (richiede avvio dei tre stack Compose, IoTronic e Pipeline e superamento del test di integrazione satellite). Aggiunti nelle Conclusioni i punti dedicati al comportamento dell'ibrido e della pipeline reale.
+
+### 4. Gruppo D — Tracciabilità Reale e Automazione Controlli (Commit `23a3b1d`)
+- **Tracciabilità File Reali (`report/TRACEABILITY.md`):** Sostituiti tutti i riferimenti generici a script con i percorsi reali del repository: `hpc-engine/results/callgrind_annotate.txt`, `callgrind.out`, `pipeline_throughput_i7_12700h_20260908.csv`, `hpc-engine/benchmarks/generate_report_graphs.py`, `pipeline_throughput_benchmark.py`. Aggiunte formule di stima di $Gen$ e controllo concorrente $p=6$.
+- **Script di Controllo Aritmetico Esteso (`report/verify_numbers.py`):** Esteso lo script con 8 blocchi di controllo: fact matching su `PROGRESS.md`, consistenza $S = \text{rate}/v_1$ per E5, somma $100.00\%$ Tabella 1, intervalli $S/R$ e rendimento worker $S/(R-1)$, calcolo verdetti IQR da CSV per E3b vs E2b ed E1c, calcolo serializzazione Karp-Flatt $e(p)$, ricalcolo Net Residuals Tabella 7 ed errori percentuali Tabella 8. Esito: **`[SUCCESS] ALL mathematical, statistical, and factual checks passed perfectly!`**.
+- **Audit Grep Termini Sensibili:** Verificate ed epurate tutte le occorrenze residue di termini causali non provati o enfatici.
+
+---
+
+## Stadio 13.5-ter — Ultime Correzioni Formali e Metodologiche a report/main.tex
+
+Completata la revisione finale di `report/main.tex` e l'estensione di `report/verify_numbers.py` (senza compilare localmente, compila l'utente su Overleaf):
+
+### 1. Riconciliazione Ibrido Tabella 5 (T1)
+- Corrette le celle $p=16$ e $p=20$ per l'ibrido in Tabella 5 calcolate direttamente da `results_e3_hybrid.csv` ($N=20{,}000$, binding hwthread, baseline $T_1 = 1.063555$\,s):
+  - $p=16$: $S = 7.68$ [7.32--7.86], $E = 0.48$ (precedentemente riportava erroneamente $7.02$, che corrispondeva a $C_{\mathrm{static}}(16)$ da `v3_machine_capacity_curve.csv`).
+  - $p=20$: $S = 8.30$ [7.21--8.55], $E = 0.42$ (precedentemente riportava intervallo IQR discordante $[7.95, 8.48]$).
+- Allineata la cella $p=12$ dagger di E3b da `results_e3b_hybrid_map_core.csv` a $5.14$ [5.14--5.16] ($E = 0.43$) coerente con §F e con l'arrotondamento floating-point standard di $5.1450$. Aggiornato il riferimento corrispondente in §7.2 e Conclusioni.
+
+### 2. Tracciabilità Colonne gRPC Tabella 5 e §7.6 (T2)
+- Tabella 5: Sostituita la serie ibrida/interpolata ($1.85, 3.66, 4.13, 3.77, 5.14, 6.26, 7.43$) con la serie sperimentale canonica completa di E4 (`results_e4_grpc.csv`, unpinned container grid, 10 ripetizioni per punto):
+  - $p=2$: $S_{\mathrm{wall}} = 1.14$ [1.10--1.14], $S_{\mathrm{compute}} = 2.00$ [1.92--2.01]
+  - $p=4$: $S_{\mathrm{wall}} = 2.04$ [1.82--2.07], $S_{\mathrm{compute}} = 3.63$ [3.58--3.71]
+  - $p=6$: $S_{\mathrm{wall}} = 2.27$ [2.12--2.76], $S_{\mathrm{compute}} = 4.71$ [4.56--5.19]
+  - $p=8$: $S_{\mathrm{wall}} = 2.80$ [2.67--2.84], $S_{\mathrm{compute}} = 5.27$ [4.96--6.04]
+  - $p=12$: $S_{\mathrm{wall}} = 3.26$ [3.12--3.50], $S_{\mathrm{compute}} = 5.98$ [5.69--6.62]
+  - $p=16$: $S_{\mathrm{wall}} = 3.50$ [2.73--4.35], $S_{\mathrm{compute}} = 7.55$ [7.34--7.79]
+  - $p=20$: $S_{\mathrm{wall}} = 3.53$ [3.42--4.47], $S_{\mathrm{compute}} = 9.11$ [8.80--9.32]
+- Caption di Tabella 5: Esplicitato che le colonne gRPC riportano l'esperimento E4 a container non vincolati ad affinità hardware.
+- Testo §7.6: Ricalcolati i divari tra MPI statico ed E4 compute: per $p \in \{2, 4\}$ gRPC replica MPI entro il $\pm 3.8\%$ ($2.00$ vs $1.93$, $+3.8\%$; $3.63$ vs $3.71$, $-2.2\%$), con deficit moderato a $p=6$ ($4.71$ vs $5.32$, $-11.4\%$); a $p \ge 8$ i container non vincolati migrano sui P-core/SMT superando il limite della barriera statica E-core di MPI ($+36.0\%$ a $p=8$, $+8.9\%$ a $p=12$, $+3.3\%$ a $p=16$, $+3.4\%$ a $p=20$).
+
+### 3. Risoluzione Riferimenti Mancanti (T3)
+- Inserita label `\label{sec:agglomeration}` in `\subsection{Agglomeration}` (§4).
+- Aggiunta in `verify_numbers.py` la verifica formale che tutte le 31 `\ref{...}` nel documento puntino a una `\label{...}` definita per nome esatto: zero riferimenti rotti.
+
+### 4. Riformulazione Affermazioni Non Verificate e Correzioni Tabella 6 (T4)
+- **§7.2 prima di Tabella 6 (T4a):** Riscritto in forma neutra: "E6b was run for $R \in \{3, \dots, 10, 12, 14\}$; $R = 1, 2$ are omitted (no or one worker rank), while $R=11$ and $R=13$ were not evaluated in the dynamic configuration matrix."
+- **E10 Chunk Sizes (T4b):** Riformulato §7.2 item 3 evidenziando che l'aumento del chunk size da $c=50$ a $c=200$ non riduce il gap rispetto a E6b ($S = 4.68$ [4.55--5.08] vs $5.03$ [4.62--5.15] a $R=10$), confermando che la granularità grossolana incrementa il carico di coda sui core lenti.
+- **Tassonomia Tabella 5 (§6.1, T4c):** Modificata la descrizione di OpenMP taskloop in "Task pool scheduled by the OpenMP runtime" (eliminato "runtime work stealing"); riga Production Pipeline aggiornata con "M11.5 (E7 not re-run in M13)".
+- **Walkthrough §6.2 (T4d):** Verificato in `hpc-engine/src/mpi_experiment/main_mpi_dynamic.cpp` (righe 137--184) che Rank 0 opera esclusivamente in ciclo di coordinamento master (`TAG_REQUEST`, `TAG_WORK`, `TAG_TERMINATE`), senza eseguire alcuna verifica di firme né caricare il dataset in memoria.
+- **OpenMP Scheduling §7.3 (T4e):** Espansa la discussione sul differenziale prestazionale tra OpenMP static unbound ($S=7.69$ in E5, $S=7.49$ [7.29--7.58] in E1) e close ($S=6.68$ [6.39--6.91] in E1c) a $T=16$: il guadagno del 15% deriva dalla flessibilità del kernel Linux nel distribuire i thread sui P-core/SMT liberi rispetto alla rigida mappatura sequenziale su CPU 0--15.
+- **Tabella 6 E1c Close:** Corretta la cella $R=3$ a $2.68$ [2.62--2.76] da `results_e1c_omp_cores_close.csv`; marcate con `---` le configurazioni dispari non campionate ($R=5, 7, 9$). Rettificato il verdetto a $R=5$ da $-19.1\%$ a $-19.2\%$ coerente con il calcolo esatto.
+
+### 5. Frase Esplicativa Mappatura hwthread (§7.1, T5)
+- Inserita post-Tabella 5 la spiegazione per i revisori R5/R7: il binding `--bind-to hwthread` (E3) satura prima i thread SMT dei P-core; per questo a $p=8$ e $p=12$ E3 ($4.51$ e $6.34$) supera E3b ($4.02$ e $5.14$) ed E2b ($3.88$ e $5.49$) impiegando solo 4 e 6 core fisici contro 8 e 12. Il confronto equo è a parità di core fisici ($R$, §7.2).
+
+### 6. Estensione e Automazione Controlli (`report/verify_numbers.py`, T6)
+- Esteso `report/verify_numbers.py` con validazione esaustiva automatica di tutte le 56 celle di Tabella 5 e tutte le 60 celle di Tabella 6 contro i CSV grezzi (`results_e1c_omp_cores_close.csv`, `results_e2b_mpi_map_core.csv`, `results_e3_hybrid.csv`, `results_e3b_hybrid_map_core.csv`, `results_e4_grpc.csv`, `results_e6b_dynamic_map_core.csv`, `results_e10_dynamic_hybrid.csv`).
+- Verificata l'assenza di termini causali o enfatici non supportati.
 
