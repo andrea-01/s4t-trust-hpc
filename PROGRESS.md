@@ -930,27 +930,30 @@ Misurata per ogni $q \in [1..20]$ lungo l'ordine effettivo di allocazione: 6 P-c
 - A $T=20$: parallel for = `0.1362 s` ($S=7.81$); `taskloop grain 100` = `0.1120 s` ($S=9.49$).
 *Nota:* Il grainsize 10 soffre di overhead di scheduling dei task (`1.037 s`), mentre grainsize 50-100 supera sistematicamente il parallel for statico a thread elevati.
 
-2. **Diagnosi Binding di E6 Old e Risultati E6b (`--map-by core --bind-to core`):**
+2. **Diagnosi Binding di E6 Old e Risultati E6b (`--map-by core --bind-to core` a pari core fisici):**
 - **Diagnosi Binding E6 Old (`e6.log:33-36`):** L'uso di `--use-hwthread-cpus --bind-to hwthread` senza `--map-by core` ha collocato Rank 0 (Master) su `core 0 [hwt 0]` e Rank 1 (Worker 0) su `core 0 [hwt 1]`, mentre Rank 2 e 3 condividevano `core 1 [hwt 0-1]`. A $R=4$ ($p_{calc}=3$), 3 worker e il master erano compressi su soli 2 core fisici, con contesa SMT diretta tra il coordinatore in attesa e il primo worker ($S = 1.97$).
-- **Campagna E6b (`results_e6b_dynamic_map_core.csv`):** Con `--map-by core --bind-to core`, ciascun rank riceve un core fisico esclusivo (Master su Core 0, $R-1$ worker su Core $1..R-1$):
+- **Campagna E6b a pari core fisici (`results_e6b_dynamic_map_core.csv`):** Con `--map-by core --bind-to core`, ciascun rank riceve un core fisico esclusivo. In E6b, Rank 0 è il master (non calcola) e $R-1$ rank sono worker; il confronto con E2b statico va condotto **a parità di core fisici allocati ($R$)**, valutando lo speedup aggregato $S$, l'efficienza per core $S/R$ e la sovrapposizione degli intervalli interquartili (IQR [Q25–Q75]):
 
-| $R$ | $p_{calc}$ | Core fisici usati dai worker | E2b Statico $S$ | E6 Old $S$ (c100) | E6b Dyn $S$ (chunk 25) | E6b Dyn $S$ (chunk 100) | E6b Dyn con `yield_idle` |
-|---|---|---|---|---|---|---|---|
-| 3 | 2 | 2 P-cores | 1.93 | — | 1.93 | 1.92 | — |
-| 4 | 3 | 3 P-cores | 2.81 | 1.97 | **2.88** | **2.87** | **2.87** |
-| 5 | 4 | 4 P-cores | 3.71 | 2.85 | 3.60 | 3.59 | — |
-| 6 | 5 | 5 P-cores | 4.45 | 3.01 | 4.49 | 4.49 | — |
-| 7 | 6 | 5 P-cores + 1 E-core | 5.32 | 3.92 | 4.99 | 5.00 | — |
-| 8 | 7 | 5 P-cores + 2 E-cores | 3.35 | 4.03 | **5.49** (+63.9%) | **5.46** (+63.0%) | **5.46** |
-| 9 | 8 | 5 P-cores + 3 E-cores | 3.88 | 4.72 | **5.94** (+53.1%) | **5.83** (+50.3%) | **5.82** |
-| 10 | 9 | 5 P-cores + 4 E-cores | — | 4.88 | 6.37 | 6.37 | — |
-| 12 | 11 | 5 P-cores + 6 E-cores | — | 5.91 | 7.24 | 7.12 | — |
-| 14 | 13 | 5 P-cores + 8 E-cores | — | — | 8.15 | 7.88 | — |
+| Core $R$ | Composizione Core | E2b Statico $S$ [IQR] | E2b $S/R$ | E6b Dyn c25 $S$ [IQR] | E6b c25 $S/R$ | Esito IQR c25 | E6b Dyn c100 $S$ [IQR] | E6b c100 $S/R$ | Esito IQR c100 | E6b con `yield_idle` |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 3 | 3 P-cores | 2.81 [2.71–2.86] | 0.936 | 1.93 [1.92–1.93] | 0.642 | Perde E6b (-31.4%) | 1.92 [1.92–1.93] | 0.641 | Perde E6b (-31.5%) | — |
+| 4 | 4 P-cores | 3.71 [3.58–3.75] | 0.928 | 2.87 [2.83–2.88] | 0.718 | Perde E6b (-22.6%) | 2.87 [2.84–2.88] | 0.717 | Perde E6b (-22.7%) | 2.87 |
+| 5 | 5 P-cores | 4.45 [4.38–4.47] | 0.890 | 3.60 [3.58–3.60] | 0.719 | Perde E6b (-19.2%) | 3.59 [3.58–3.60] | 0.719 | Perde E6b (-19.3%) | — |
+| 6 | 6 P-cores | 5.32 [5.20–5.36] | 0.886 | 4.49 [4.48–4.50] | 0.748 | Perde E6b (-15.7%) | 4.49 [4.47–4.50] | 0.749 | Perde E6b (-15.5%) | — |
+| 7 | 6 P + 1 E | 3.35 [3.31–3.49] | 0.479 | 4.99 [4.97–5.00] | 0.713 | Vince E6b (+48.9%) | 5.00 [5.00–5.01] | 0.715 | Vince E6b (+49.3%) | — |
+| 8 | 6 P + 2 E | 3.88 [3.76–3.99] | 0.484 | 5.49 [5.49–5.50] | 0.687 | Vince E6b (+41.7%) | 5.46 [5.46–5.46] | 0.683 | Vince E6b (+40.9%) | 5.46 |
+| 9 | 6 P + 3 E | 4.23 [4.23–4.25] | 0.470 | 5.94 [5.93–5.96] | 0.660 | Vince E6b (+40.4%) | 5.82 [5.79–5.87] | 0.647 | Vince E6b (+37.5%) | 5.82 |
+| 10 | 6 P + 4 E | 4.72 [4.71–4.73] | 0.472 | 6.37 [6.36–6.41] | 0.637 | Vince E6b (+35.0%) | 6.37 [6.31–6.39] | 0.637 | Vince E6b (+35.0%) | — |
+| 11 | 6 P + 5 E | 4.91 [4.87–4.96] | 0.447 | — | — | — | — | — | — | — |
+| 12 | 6 P + 6 E | 5.49 [5.46–5.54] | 0.458 | 7.24 [7.23–7.26] | 0.604 | Vince E6b (+32.0%) | 7.12 [7.11–7.13] | 0.594 | Vince E6b (+29.8%) | — |
+| 13 | 6 P + 7 E | 5.89 [5.87–5.93] | 0.453 | — | — | — | — | — | — | — |
+| 14 | 6 P + 8 E | 6.40 [6.16–6.51] | 0.457 | 8.15 [8.09–8.19] | 0.582 | Vince E6b (+27.4%) | 7.88 [7.87–7.89] | 0.563 | Vince E6b (+23.2%) | — |
 
-- **Esiti quantitativi sul recupero dinamico:**
-  - L'anomalia di E6 a $p_{calc}=3$ ($S=1.97$) è scomparsa: E6b raggiunge $S = 2.88$, perfettamente in linea con E2b statico ($S=2.81$).
-  - La variante con `--mca mpi_yield_when_idle 1` registra speedup identici ($2.87$ a $R=4$, $5.46$ a $R=8$, $5.82$ a $R=9$): confermato che quando il master risiede su un core fisico separato, il busy-polling non penalizza i worker.
-  - Il recupero del master-worker dinamico sullo statico quando entrano gli E-core **non sparisce affatto, ma cresce notevolmente**: a 7 worker il vantaggio sale da +23% (E6) a **+63.9%** (E6b: $5.49$ vs $3.35$); a 8 worker sale da +21.7% (E6) a **+53.1%** (E6b: $5.94$ vs $3.88$).
+- **Esiti quantitativi sul recupero dinamico (a parità di core fisici):**
+  - **Zona omogenea P-cores ($R \le 6$): il dinamico PERDE sistematicamente rispetto allo statico.** Poiché il processo Master risiede su un P-core ma non esegue verifiche, il sistema dispone di soli $R-1$ worker computazionali. A $R=3$, E6b perde il $31.4\%$ rispetto a E2b ($1.93$ vs $2.81$); a $R=6$, perde il $15.7\%$ ($4.49$ vs $5.32$). Gli IQR non si sovrappongono.
+  - **Transizione a $R=7$ (ingresso del primo E-core):** Lo statico E2b collassa a $S=3.35$ a causa del collo di bottiglia del rank 6 (E-core), che impiega il doppio del tempo sul chunk uniforme $N/7$. Il dinamico E6b raggiunge $S=4.99$ (chunk 25) / $5.00$ (chunk 100), **vincendo nettamente sullo statico a $R=7$ (+48.9%)**. Tuttavia, va evidenziato che a 7 core fisici il dinamico ($S=5.00$) resta **inferiore ai 6 P-core statici ($S=5.32$)**, proprio perché 1 P-core su 6 è sacrificato per il coordinatore.
+  - **Zona eterogenea P+E ($R \ge 8$): il dinamico VINCE stabilmente, ma il vantaggio percentuale decresce con $R$.** A $R=8$, il dinamico supera lo statico di **+41.7%** ($5.49$ vs $3.88$); a $R=9$ di **+40.4%** ($5.94$ vs $4.23$); a $R=10$ di **+35.0%**; a $R=12$ di **+32.0%**; a $R=14$ di **+27.4%** ($8.15$ vs $6.40$). Il recupero dinamico non cresce con $R$, bensì si assesta tra il $+42\%$ e il $+27\%$ al crescere dei worker gestiti dal singolo master.
+  - **Impatto di busy-polling del master:** La variante con `--mca mpi_yield_when_idle 1` registra speedup identici a $R=4$ ($2.87$), $R=8$ ($5.46$) e $R=9$ ($5.82$): una volta garantito un core fisico dedicato al master via `--map-by core --bind-to core`, il busy-polling di Open MPI non impatta minimamente le prestazioni dei worker.
 
 #### D. Calibrazione di Amdahl e Valutazione Predizione vs Misura
 - **Natura della frazione seriale $f_s$ su E2b:** Nella regione cronometrata di E2b non vi è codice seriale (il cronometro racchiude esclusivamente `SignatureBench::run_parallel`, senza comunicazioni o riduzioni; il tempo registrato è $T = \max_{rank} T_{verify\_rank}$). La frazione seriale $f_s$ rappresenta quindi una **perdita di scalabilità effettiva a $p \le 4$** dovuta a micro-contese di memoria/cache, non alla struttura algoritmica del problema.
@@ -1007,9 +1010,10 @@ Verifica delle differenze prestazionali e della sovrapposizione degli intervalli
 ### 2. Rettifica Mapping e Binding MPI (W2)
 - **Bug di binding in E6 ed E8:** L'assenza di `--map-by core` comprimeva rank adiacenti sui due thread hardware del core 0. In E6, il master coordinator (rank 0) condivideva il core 0 con il worker 0 (rank 1), provocando una forte contesa SMT e degradando $S$ a $1.97$ per $R=4$ ($p_{calc}=3$). In E8, $R=2$ registrava $S=1.20$ per la stessa ragione.
 - **Risoluzione con `--map-by core --bind-to core` (E6b, E8b, E3b):**
-  - A $p_{calc}=3$, E6b raggiunge $S = 2.88$ (azzerando l'anomalia di E6 e allineandosi a E2b statico $2.81$).
-  - La variante con `--mca mpi_yield_when_idle 1` conferma che con core fisici dedicati, il busy-polling del master ha impatto zero sulle prestazioni dei worker.
-  - Il recupero del master-worker dinamico sugli E-core **cresce notevolmente**: a 7 worker, il vantaggio su E2b statico passa da +23% a **+63.9%** ($S = 5.49$ vs $3.35$); a 8 worker, passa da +21.7% a **+53.1%** ($S = 5.94$ vs $3.88$).
+  - Con binding esclusivo ai core fisici, il busy-polling del master (`yield_when_idle`) non produce alcuna contesa misurabile sui worker.
+  - **Confronto a pari core fisici allocati ($R$):**
+    - Per $R \le 6$ (soli P-cores), il master-worker dinamico **perde sistematicamente** rispetto allo statico (a $R=3$ perde $-31.4\%$, a $R=6$ perde $-15.7\%$), poiché il master consuma un intero core fisico per il coordinamento senza eseguire verifiche.
+    - Per $R \ge 7$ (quando entrano gli E-core), il bilanciamento dinamico a chunk **vince nettamente** sullo statico (a $R=8$ vantaggio del **+41.7%**, $5.49$ vs $3.88$; a $R=14$ vantaggio del **+27.4%**, $8.15$ vs $6.40$), impedendo che l'E-core rallenti l'intero batch come avviene in E2b. Il vantaggio percentuale decresce con $R$ man mano che il carico statico per rank si riduce. A $R=7$, sebbene E6b ($S=5.00$) superi E2b a $R=7$ ($S=3.35$), resta comunque inferiore a 6 P-core statici ($S=5.32$) a causa del core consumato dal master.
 
 ### 3. Origine del Residuo gRPC (W3)
 - L'overhead residuo di 50–75 ms a $p \ge 8$ non è dovuto al client asincrono Python (costo di Ping = 4–7 ms).
