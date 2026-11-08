@@ -97,8 +97,8 @@ def plot_fig_a() -> None:
     if cap_csv.exists():
         df_cap = pd.read_csv(cap_csv)
         if "c_dyn" in df_cap.columns:
-            ax.plot(df_cap["p"], df_cap["c_dyn"], "m-.", lw=2.2, alpha=0.85, label=r"Capacità ideale bilanciata $C_{\mathrm{dyn}}(p)$ (E9b)", zorder=2)
-            ax.plot(df_cap["p"], df_cap["c_static"], ":", color="#d62728", lw=2.0, alpha=0.80, label=r"Capacità partizione statica $C_{\mathrm{static}}(p)$ (E9b)", zorder=2)
+            ax.plot(df_cap["p"], df_cap["c_dyn"], "m-.", lw=2.2, alpha=0.85, label=r"Ideal dynamic capacity $C_{\mathrm{dyn}}(p)$ (E9b)", zorder=2)
+            ax.plot(df_cap["p"], df_cap["c_static"], ":", color="#d62728", lw=2.0, alpha=0.80, label=r"Static partition capacity $C_{\mathrm{static}}(p)$ (E9b)", zorder=2)
         elif "c_cap" in df_cap.columns:
             ax.plot(df_cap["p"], df_cap["c_cap"], "m-.", lw=2.2, alpha=0.85, label="Machine capacity limit $C(p)/C(1)$ (E9)", zorder=2)
 
@@ -160,8 +160,8 @@ def plot_fig_b() -> None:
     if cap_csv.exists():
         df_cap = pd.read_csv(cap_csv)
         if "c_dyn" in df_cap.columns:
-            ax.plot(df_cap["p"], df_cap["c_dyn"] / df_cap["p"], "m-.", lw=2.2, alpha=0.85, label=r"Efficienza ideale $C_{\mathrm{dyn}}(p)/p$ (E9b)", zorder=2)
-            ax.plot(df_cap["p"], df_cap["c_static"] / df_cap["p"], ":", color="#d62728", lw=2.0, alpha=0.80, label=r"Efficienza statica $C_{\mathrm{static}}(p)/p$ (E9b)", zorder=2)
+            ax.plot(df_cap["p"], df_cap["c_dyn"] / df_cap["p"], "m-.", lw=2.2, alpha=0.85, label=r"Ideal dynamic limit $C_{\mathrm{dyn}}(p)/p$ (E9b)", zorder=2)
+            ax.plot(df_cap["p"], df_cap["c_static"] / df_cap["p"], ":", color="#d62728", lw=2.0, alpha=0.80, label=r"Static partition limit $C_{\mathrm{static}}(p)/p$ (E9b)", zorder=2)
         elif "c_cap" in df_cap.columns:
             ax.plot(df_cap["p"], df_cap["c_cap"] / df_cap["p"], "m-.", lw=2.2, alpha=0.85, label="Capacity limit $C(p)/p$ (E9)", zorder=2)
 
