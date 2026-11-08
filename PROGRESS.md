@@ -1117,5 +1117,40 @@ Misurate 10 ripetizioni intercalate di E10 (`hpc_engine_mpi_dynamic` con `--map-
 ### 5. Stato Esperimento E7 Pipeline Reale (X5)
 Come concordato, l'esperimento E7 su pipeline end-to-end è sospeso poiché i 3 stack esterni (Compose base, IoTronic e Pipeline) sono spenti. Se si vorrà eseguire E7, la procedura richiede l'avvio preliminare dei tre stack e si esegue con la Parte B di 13.3-bis e il test di integrazione del satellite (`satellite/tests/test_integration.py`) come gate di prontezza dell'infrastruttura.
 
+---
+
+## Stadio 13.5 — Riscrittura del Report Finale (PCAM, Amdahl, E4c e Tracciabilità)
+
+### 1. Rettifiche Preliminari su E4c e Gate E7 (Passo 0)
+- **Rettifica Tabella E4c:** Riconciliata la colonna residuo distinguendo `Residuo Lordo` ($T_{\mathrm{wall}} - T_{\mathrm{verify}} - Ping$) e `Residuo Netto` ($T_{\mathrm{wall}} - T_{\mathrm{verify}} - Gen - Ping$). A $p=2$, `p2_pcores` ha residuo netto 48.3 ms e `p2_smt` 29.2 ms. A $p=8$, `p8_ecores` ha residuo netto 26.9 ms e `p8_smt` 23.5 ms. A $p \ge 12$, il residuo netto è 31–33 ms.
+- **Controllo economico a $p=6$:** Misurati 6 processi simultanei di `bench_device_gen` pinnati su CPU 0, 2, 4, 6, 8, 10 (10 ripetizioni). Il tempo di generazione per device passa da $38.5\,\mu\text{s}$ (isolato) a $41.61\,\mu\text{s}$ (IQR $0.67\,\mu\text{s}$); il tempo di generazione a $p=6$ ($N=3.333$) sale da 128.4 ms a 138.7 ms, e il residuo netto scende da 79.0 ms a 68.7 ms. Il residuo netto a $p=6$ resta non spiegato né dall'ipotesi SMT né da quella E-core ed è riportato come dato empirico senza speculazioni.
+- **Correzione Gate E7:** Rimossa la riga non valida `curl localhost:8000/health`; confermato che E7 si esegue solo previa riattivazione dei 3 stack esterni con test di integrazione del satellite come gate.
+
+### 2. Struttura del Nuovo Report (`report/main.tex`)
+Il report è stato riscritto integralmente adottando la metodologia PCAM (Partitioning, Communication, Agglomeration, Mapping):
+- **Sezione 1 (Introduction & Environments):** Dichiara esplicitamente che i nodi del benchmark isolato sono container Docker sullo stesso host fisico; separa in modo netto la campagna principale M13 (20.000 firme, 10 ripetizioni, governor performance, baseline $T_1 = 1.0636$\,s) dalla campagna esplorativa M11.5 (fino a 32 nodi, non pinnata).
+- **Sezione 2 (Problem & Sequential Algorithm):** Algoritmo 1 formale con `EVP_DigestVerifyInit` e `EVP_DigestVerify` (non `ECDSA_verify`). Dati di micro-benchmark da `per_verify_summary.csv` (media 57.42 $\mu$s, CV 12.66\%, p99 87.44 $\mu$s). Profilo Callgrind (Tabella 1) specificando "% of executed instructions" (87.88\% EC/BIGNUM).
+- **Sezione 3 (Partitioning):** Decomposizione astratta di dominio (compiti fini $V_i$, riduzione $\Sigma$, cammino critico lungo 2) e catena funzionale a 3 stadi con pipeline tra richieste. Diagrammi TikZ vettoriali nativi.
+- **Sezione 4 (Communication, Agglomeration, Aggregation):** Quantificazione del volume dati scambiato (pochi byte; generazione sintetica in-situ); Tabella 2 con overhead misurati (MPI `reduce_s` 38 $\mu$s, gRPC Ping 1.1–1.3 ms, pipeline steady-state 690 ms); regola del resto formale per l'agglomerazione; aggregazione per riduzione, polling master-worker o asincrono.
+- **Sezione 5 (Mapping):** Tabella 3 con matrice delle policy di mapping. Sottosezione "Mapping to Hardware" con Tabella 4 che documenta i binding reali e chiarisce le anomalie di E2 ($p=2$ SMT contention) ed E6 (master busy-polling contention), entrambe risolte con `--map-by core --bind-to core` (E2b, E6b). Analisi statico vs dinamico.
+- **Sezione 6 (Hybrid Implementation):** Due livelli di parallelismo (inter-processo MPI e intra-processo OpenMP), interfaccia `MPI_THREAD_FUNNELED`, estensione gRPC e diagramma TikZ vettoriale.
+- **Sezione 7 (Performance Evaluation):**
+  - *7.1 Speedup su $p$ elementi:* Figura A aggiornata con bande bootstrap ed entrambe le curve di capacità empirica ($C_{\mathrm{static}}$ e $C_{\mathrm{dyn}}$ da E9b); Tabella 5 riassuntiva; metrica di Karp-Flatt $e(p)$ (Figura C) che spiega l'impennata a $p \ge 7$ come eterogeneità hardware anziché codice seriale.
+  - *7.2 Pari core fisici ($R$):* Tabella 6 completa con verdetti per IQR: master-worker dinamico perde fino a $R=6$ ($-31.4\%$ a $R=3$, master consuma 1 P-core) e vince da $R=7$ (+48.9\% a $R=7$, +41.7\% a $R=8$, fino a +27.4\% a $R=14$). Dimostrato che l'ibrido statico E3b non supera i modelli puri e l'ibrido dinamico E10 perde contro il dinamico puro E6b.
+  - *7.3 Scheduling OpenMP & Taskloop:* Figura G e H; guadagno di `dynamic,16` su `static` (+19.6\% a $T=16$, +13.9\% a $T=20$).
+  - *7.4 Capacità macchina & Efficienza:* Figura B; a $p=20$ MPI statico ($100.8\%$) e OpenMP statico ($99.4\%$) saturano la capacità statica $C_{\mathrm{static}}(20) = 8.74$ entro l'incertezza sperimentale; `dynamic,16` estrae il $97.0\%$ della capacità dinamica $C_{\mathrm{dyn}}(20) = 10.20$.
+  - *7.5 Amdahl:* Figura D; $f_s = 2.80\%$ su $p \le 4$; ottimo accordo a $p=6$ (5.26 pred. vs 5.32 mis., gap 1.1\%); divergenza a $p \ge 7$ coerente con la curva di capacità empirica.
+  - *7.6 gRPC & Overhead:* Figura F; scomposizione di $T_{\mathrm{wall}}$; Tabella 7 con i dati discriminanti E4c; chiarito che l'asintoto M11.5 a ~87k sig/s era dovuto alla generazione payload non vettorizzata a bordo worker, mentre l'overhead infrastrutturale effettivo è di 23–33 ms.
+  - *7.7 Pipeline reale:* Tabella 8 e Figura 13 (M11.5); rimossa la falsa causa "head-of-line blocking" (lasciata come ipotesi) e rimossa la dicitura di "soglia a $n=4$" (semplice effetto aritmetico).
+  - *7.8 Omissione $F_c$:* Motivata dall'assenza di operazioni floating-point nel profilo.
+- **Sezione 8 (Limitations & Conclusion):** Paragrafo Limits dettagliato (singola macchina eterogenea, container su shared host, governor performance non loggato per-run sui binari diretti, fingerprint 13.2+addendum, E7 non rieseguito). Conclusioni sintetiche e prive di superlativi.
+
+### 3. Tracciabilità e Strumenti di Validazione
+- **`report/figures/`:** Tutte le 13 figure PDF/PNG necessarie al report sono state copiate nella cartella dedicata con percorsi relativi. Aggiornato lo script `generate_m13_graphs.py` traducendo in inglese le legende delle curve di capacità empirica.
+- **`report/TRACEABILITY.md`:** Documento di audit che associa formalmente ogni figura e tabella di `report/main.tex` al relativo script generatore e file CSV sorgente.
+- **`report/verify_numbers.py`:** Script di controllo automatico che estrae e valida tutti i 43 fatti numerici del testo contro `PROGRESS.md` e i CSV derivati. Esito: `[SUCCESS] All key numerical claims match PROGRESS.md and experimental artifacts!`.
+- **Integrità sorgente LaTeX:** Zero `\todo` residui, 38 label definite, 23 label referenziate, 0 riferimenti mancanti. Rimossi tutti i cliché di scrittura e le frasi smentite ("the difference is entirely explained...", "overhead grows with concurrent channels...", ecc.).
+- **Commit atomici:** Eseguiti commit separati per ciascuna macro-sezione su branch `main`. Push a carico dell'utente prima della fase 13.6.
+
 
 
