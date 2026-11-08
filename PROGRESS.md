@@ -893,9 +893,9 @@ Misurata per ogni $q \in [1..20]$ lungo l'ordine effettivo di allocazione: 6 P-c
 1. **Modello da misure isolate ($11.264$ equivalenti P-core):** $6 \times 1.20 + 8 \times 0.5081$ è un modello sintetico estrapolato dai rapporti misurati isolatamente, non una misura empirica di throughput concorrente.
 2. **Capacità sotto partizione statica ($C_{static}(q)$):** Con lavoro rigidamente equiripartito tra processi, i P-core terminano in ~1.19 s e rimangono inattivi ad attendere l'E-core (~2.11 s). Per questo motivo $C_{static}(7)$ crolla a 3.53 e $C_{static}(14) = 6.15 < C_{static}(12) = 6.48$. A $q=20$, $C_{static} = 8.74$, valore che coincide quasi perfettamente con OpenMP statico a $T=20$ ($S = 8.68$, $E_{cap\_static} = 99.3\%$).
 3. **Capacità sotto bilanciamento ideale ($C_{dyn}(q)$):** Misura la somma effettiva delle velocità dei singoli processi $\sum (N/T_i)$. Sotto bilanciamento dinamico ideale, la capacità della macchina sale monotonicamente fino a **$10.21$ equivalenti P-core** (o $10.42$ se normalizzata sulla configurazione isolata $a$).
-4. **Efficienza reale estratta dagli scheduler:**
-   - A $T=20$, OpenMP `dynamic,16` raggiunge $S = 9.89$, pari al **$96.9\%$** della reale capacità dinamica della macchina ($C_{dyn}(20) = 10.21$).
-   - A $p=20$, MPI puro statico raggiunge $S = 8.80$, pari al **$100.7\%$** della capacità statica consentita dall'hardware ($C_{static}(20) = 8.74$) e all'**$86.2\%$** della capacità ideale dinamica.
+4. **Efficienza reale estratta dagli scheduler (normalizzazione unificata su $T_1(\text{E0b}) = 1.0636\,\text{s}$):**
+   - A $T=20$, OpenMP `dynamic,16` raggiunge $S = 9.89$ [9.75–9.91], estraendo il **$97.0\%$** [IQR: $95.6\%–97.1\%$] della reale capacità dinamica della macchina ($C_{dyn}(20) = 10.2039$).
+   - A $p=20$, MPI puro statico raggiunge $S = 8.81$ [8.22–9.19]: il rapporto $S / C_{static}(20)$ vale **$100.8\%$ [IQR: $94.1\%–105.2\%$]**, risultando **pari alla capacità statica della macchina entro l'incertezza sperimentale** (non oltre la capacità per effetto di scala, ma allineato entro il rumore). Rispetto alla capacità dinamica ideale, MPI statico estrae l'**$86.3\%$ [IQR: $80.6\%–90.1\%$]**.
 
 ---
 
@@ -928,16 +928,16 @@ Misurata per ogni $q \in [1..20]$ lungo l'ordine effettivo di allocazione: 6 P-c
 | 12 | dynamic,16 | 0.1329 | 0.0006 | 150.498,5 | 8.00 [7.88, 8.06] | 0.67 | 151.5% | **97.3%** |
 | 12 | guided | 0.1325 | 0.0050 | 150.991,5 | 8.03 [7.70, 8.10] | 0.67 | 152.0% | 97.6% |
 | 12 | static | 0.1658 | 0.0021 | 120.602,0 | 6.41 [6.29, 6.49] | 0.53 | 121.4% | 78.0% |
-| 16 | **dynamic,16** | **0.1156** | **0.0011** | **172.980,0** | **9.20 [9.03, 9.26]** | **0.58** | **131.0%** | **95.5%** |
-| 16 | guided | 0.1251 | 0.0049 | 159.852,5 | 8.50 [8.24, 8.72] | 0.53 | 121.1% | 88.2% |
-| 16 | static | 0.1382 | 0.0034 | 144.684,5 | 7.70 [7.43, 7.83] | 0.48 | 109.6% | 79.9% |
-| 20 | **dynamic,16** | **0.1075** | **0.0018** | **186.040,0** | **9.89 [9.67, 9.95]** | **0.49** | **113.2%** | **96.9%** |
-| 20 | guided | 0.1112 | 0.0037 | 179.799,0 | 9.56 [9.39, 9.83] | 0.48 | 109.4% | 93.7% |
-| 20 | static | 0.1225 | 0.0061 | 163.223,0 | 8.68 [8.53, 9.14] | 0.43 | 99.3% | 85.0% |
+| 16 | **dynamic,16** | **0.1156** | **0.0011** | **172.980,0** | **9.20 [9.03, 9.26]** | **0.58** | **131.1%** | **95.5%** |
+| 16 | guided | 0.1251 | 0.0049 | 159.852,5 | 8.50 [8.24, 8.72] | 0.53 | 121.2% | 88.3% |
+| 16 | static | 0.1382 | 0.0034 | 144.684,5 | 7.70 [7.43, 7.83] | 0.48 | 109.7% | 79.9% |
+| 20 | **dynamic,16** | **0.1075** | **0.0018** | **186.040,0** | **9.89 [9.67, 9.95]** | **0.49** | **113.3%** | **97.0%** |
+| 20 | guided | 0.1112 | 0.0037 | 179.799,0 | 9.56 [9.39, 9.83] | 0.48 | 109.5% | 93.7% |
+| 20 | static | 0.1225 | 0.0061 | 163.223,0 | 8.68 [8.53, 9.14] | 0.43 | 99.4% | 85.1% |
 
 *Evidenze quantitative E5:*
-- A $T=20$, lo scheduling statico ($S = 8.68$) satura quasi esattamente la capacità della macchina sotto partizione statica ($C_{static}(20) = 8.74$, $E_{cap\_stat} = 99.3\%$).
-- Lo scheduling `dynamic,16` estrae stabilmente il **95.5% – 97.9%** dell'ideale capacità dinamica $C_{dyn}(T)$ sull'intero spettro $T \in [4..20]$.
+- A $T=20$, lo scheduling statico ($S = 8.68$ [8.53–9.14]) è pari alla capacità della macchina sotto partizione statica entro l'incertezza sperimentale ($C_{static}(20) = 8.74$, $E_{cap\_stat} = 99.4\%$ [IQR: $97.6\%–104.6\%$]).
+- Lo scheduling `dynamic,16` estrae stabilmente il **95.5% – 97.0%** dell'ideale capacità dinamica $C_{dyn}(T)$ sull'intero spettro $T \in [4..20]$.
 
 #### C. Tabelle di Dettaglio E6 & E6b (Taskloop vs Dynamic Master-Worker)
 
@@ -1067,7 +1067,7 @@ Campagna eseguita con `hpc_engine_mpi_dynamic` con binding esplicito a core fisi
 
 ### 1. Capacità Reale dell'Eterogeneità Hardware (W1)
 - **Modello sintetico vs Misure effettive:** Il valore $C(20) = 11.26$ era un modello analitico estrapolato da misure isolate ($6 \times 1.20 + 8 \times 0.5081$).
-- **Curva di capacità empirica E9b:** Misurata su ogni $q \in [1..20]$ con ordine di riempimento reale. Sotto partizione statica con carico uniforme, $C_{static}(q)$ scende a $q=7$ ($3.53$) e $q=14$ ($6.15 < 6.48$) poiché i P-core attendono inattivi alla barriera dell'E-core più lento. A $q=20$, $C_{static}(20) = 8.74$, corrispondente quasi esattamente allo speedup di OpenMP statico ($S=8.68$, efficienza sulla capacità statica $99.3\%$). Sotto bilanciamento ideale $\sum (N/T_i)$, $C_{dyn}(20) = 10.21$, su cui OpenMP `dynamic,16` ($S=9.89$) raggiunge il **$96.9\%$** dell'ideale dinamico della macchina.
+- **Curva di capacità empirica E9b (normalizzata su $T_1(\text{E0b})$):** Misurata su ogni $q \in [1..20]$ con ordine di riempimento reale. Sotto partizione statica con carico uniforme, $C_{static}(q)$ scende a $q=7$ ($3.53$) e $q=14$ ($6.14 < 6.48$) poiché i P-core attendono inattivi alla barriera dell'E-core più lento. A $q=20$, $C_{static}(20) = 8.74$, a cui lo speedup di MPI puro statico ($S=8.81$ [8.22–9.19]) e OpenMP statico ($S=8.68$ [8.53–9.14]) risultano **pari alla capacità statica entro l'incertezza sperimentale** ($100.8\%$ [IQR: $94.1\%–105.2\%$] e $99.4\%$ [IQR: $97.6\%–104.6\%$]). Sotto bilanciamento ideale $\sum (N/T_i)$, $C_{dyn}(20) = 10.20$, su cui OpenMP `dynamic,16` ($S=9.89$ [9.75–9.91]) raggiunge il **$97.0\%$** [IQR: $95.6\%–97.1\%$] dell'ideale dinamico della macchina.
 
 ### 2. Rettifica Mapping e Binding MPI (W2)
 - **Bug di binding in E6 ed E8:** L'assenza di `--map-by core` comprimeva rank adiacenti sui due thread hardware del core 0. In E6, il master coordinator (rank 0) condivideva il core 0 con il worker 0 (rank 1), provocando una forte contesa SMT e degradando $S$ a $1.97$ per $R=4$ ($p_{calc}=3$). In E8, $R=2$ registrava $S=1.20$ per la stessa ragione.
