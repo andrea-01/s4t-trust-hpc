@@ -68,3 +68,4 @@ for name, val, ok in facts:
 
 if all_ok:
     print("\n[SUCCESS] All key numerical claims match PROGRESS.md and experimental artifacts!")
+

@@ -64,3 +64,4 @@ This document records the exact data provenance, raw and derived CSV sources, an
 - **Net Residual Formula (E4c):**
   - $\text{Net Residual} = T_{\mathrm{wall}} - T_{\mathrm{verify}} - Gen(chunk) - Ping$.
   - Reported in Table 7 and documented in `PROGRESS.md` Section 13.4-quater.
+
