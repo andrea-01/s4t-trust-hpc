@@ -1004,6 +1004,50 @@ Verifica delle differenze prestazionali e della sovrapposizione degli intervalli
   - Per chunk di $n = 2.500$ firme (regime $p=8$): $\mathbb{E}[CV_{2500}] = \frac{12.66\%}{\sqrt{2500}} = \mathbf{0.25\%}$.
 - **Confronto:** Lo sbilanciamento di costo computazionale dovuto alla sola variabilità statistica delle firme è inferiore allo **$0.40\%$**. Lo sbilanciamento empirico osservato a $p \ge 7$ ($> 40\%$) è due ordini di grandezza superiore, confermando che è interamente imputabile all'asimmetria hardware tra P-core ed E-core ($1.97\times$).
 
+#### G. Benchmark E10: Master-Worker Dinamico Ibrido (Task Parallelism + Data Parallelism)
+Campagna eseguita con `hpc_engine_mpi_dynamic` con binding esplicito a core fisici (`--map-by slot:PE=T --bind-to core`, senza `--use-hwthread-cpus`), per le fattorizzazioni $4\times 2$ (8 core), $5\times 2$ (10 core), $6\times 2$ (12 core), $7\times 2$ (14 core), $4\times 3$ (12 core), con chunk $100\cdot T$ e $25\cdot T$ (10 ripetizioni intercalate, $N = 20.000$, salvato in `results_e10_dynamic_hybrid.csv`).
+*Nota sui core inattivi:* Il processo Master (Rank 0) riceve $T$ core allocati (`slot:PE=T`) ma non esegue verifiche on-chain (si occupa solo di smistare i chunk ai worker); la colonna "Core Inattivi" indica la frazione di core della macchina dedicati al solo coordinamento.
+
+| Core Fisici | Modello | Configurazione | Chunk | Core Inattivi (Master) | $S$ [IQR] | vs E3b (Ibr. Stat.) | vs E6b c25 (Dyn $T=1$) | vs E2b (MPI Stat.) | vs E1c (OMP Close) |
+|---|---|---|---|---|---|---|---|---|---|
+| **8** | E2b (MPI statico) | $R=8$ | static | 0 (0%) | 3.88 [3.76–3.99] | — | — | rif | — |
+| **8** | E1c (OpenMP close) | $T=8$ | static | 0 (0%) | 3.77 [3.72–3.85] | — | — | — | rif |
+| **8** | E6b (Dyn $T=1$) | $R=8$ | 25 | 1 (12.5%) | 5.49 [5.49–5.50] | — | rif | — | — |
+| **8** | E6b (Dyn $T=1$) | $R=8$ | 100 | 1 (12.5%) | 5.46 [5.46–5.46] | — | — | — | — |
+| **8** | E3b (Ibrido statico) | 4 rank × 2 th | static | 0 (0%) | 4.02 [4.01–4.02] | rif | — | — | — |
+| **8** | **E10 (Dyn Ibrido)** | 4 rank × 2 th | 50 | **2 (25.0%)** | **3.94 [3.86–4.28]** | Indistinguibile | Perde | Indistinguibile | Vince |
+| **8** | **E10 (Dyn Ibrido)** | 4 rank × 2 th | 200 | **2 (25.0%)** | **3.76 [3.67–4.17]** | Indistinguibile | Perde | Indistinguibile | Indistinguibile |
+| **10** | E2b (MPI statico) | $R=10$ | static | 0 (0%) | 4.72 [4.71–4.73] | — | — | rif | — |
+| **10** | E1c (OpenMP close) | $T=10$ | static | 0 (0%) | 4.69 [4.55–4.80] | — | — | — | rif |
+| **10** | E6b (Dyn $T=1$) | $R=10$ | 25 | 1 (10.0%) | 6.37 [6.36–6.41] | — | rif | — | — |
+| **10** | E6b (Dyn $T=1$) | $R=10$ | 100 | 1 (10.0%) | 6.37 [6.31–6.39] | — | — | — | — |
+| **10** | E3b (Ibrido statico) | 5 rank × 2 th | static | 0 (0%) | 4.80 [4.78–4.86] | rif | — | — | — |
+| **10** | **E10 (Dyn Ibrido)** | 5 rank × 2 th | 50 | **2 (20.0%)** | **5.03 [4.62–5.15]** | Indistinguibile | Perde | Indistinguibile | Indistinguibile |
+| **10** | **E10 (Dyn Ibrido)** | 5 rank × 2 th | 200 | **2 (20.0%)** | **4.68 [4.55–5.08]** | Indistinguibile | Perde | Indistinguibile | Indistinguibile |
+| **12** | E2b (MPI statico) | $R=12$ | static | 0 (0%) | 5.49 [5.46–5.54] | — | — | rif | — |
+| **12** | E1c (OpenMP close) | $T=12$ | static | 0 (0%) | 5.34 [5.14–5.42] | — | — | — | rif |
+| **12** | E6b (Dyn $T=1$) | $R=12$ | 25 | 1 (8.3%) | 7.24 [7.23–7.26] | — | rif | — | — |
+| **12** | E6b (Dyn $T=1$) | $R=12$ | 100 | 1 (8.3%) | 7.12 [7.11–7.13] | — | — | — | — |
+| **12** | E3b (Ibrido statico) | 4 rank × 3 th | static | 0 (0%) | 5.14 [5.13–5.17] | rif | — | — | — |
+| **12** | E3b (Ibrido statico) | 6 rank × 2 th | static | 0 (0%) | 5.15 [5.14–5.16] | rif | — | — | — |
+| **12** | **E10 (Dyn Ibrido)** | 4 rank × 3 th | 75 | **3 (25.0%)** | **4.36 [4.03–4.49]** | Perde | Perde | Perde | Perde |
+| **12** | **E10 (Dyn Ibrido)** | 4 rank × 3 th | 300 | **3 (25.0%)** | **4.03 [3.97–4.75]** | Perde | Perde | Perde | Perde |
+| **12** | **E10 (Dyn Ibrido)** | 6 rank × 2 th | 50 | **2 (16.7%)** | **5.68 [5.50–5.86]** | Vince | Perde | Indistinguibile | Vince |
+| **12** | **E10 (Dyn Ibrido)** | 6 rank × 2 th | 200 | **2 (16.7%)** | **5.69 [5.20–5.88]** | Vince | Perde | Indistinguibile | Indistinguibile |
+| **14** | E2b (MPI statico) | $R=14$ | static | 0 (0%) | 6.40 [6.16–6.51] | — | — | rif | — |
+| **14** | E1c (OpenMP close) | $T=14$ | static | 0 (0%) | 5.86 [5.61–6.13] | — | — | — | rif |
+| **14** | E6b (Dyn $T=1$) | $R=14$ | 25 | 1 (7.1%) | 8.15 [8.09–8.19] | — | rif | — | — |
+| **14** | E6b (Dyn $T=1$) | $R=14$ | 100 | 1 (7.1%) | 7.88 [7.87–7.89] | — | — | — | — |
+| **14** | E3b (Ibrido statico) | 7 rank × 2 th | static | 0 (0%) | 6.01 [5.99–6.47] | rif | — | — | — |
+| **14** | **E10 (Dyn Ibrido)** | 7 rank × 2 th | 50 | **2 (14.3%)** | **6.43 [6.14–6.50]** | Indistinguibile | Perde | Indistinguibile | Vince |
+| **14** | **E10 (Dyn Ibrido)** | 7 rank × 2 th | 200 | **2 (14.3%)** | **6.33 [6.14–6.55]** | Indistinguibile | Perde | Indistinguibile | Vince |
+
+- **Verdetti statistici per sovrapposizione IQR:**
+  - **E10 vs E6b ($T=1$ dinamico):** E10 **PERDE sistematicamente** contro E6b su tutte le configurazioni e core (ad es. a 8 core $3.94$ vs $5.49$, a 14 core $6.43$ vs $8.15$), poiché la granularità a thread comporta $T$ core inattivi per il Master (fino al 25% dei core totali) e l'overhead di fork/join OpenMP sui singoli chunk.
+  - **E10 vs E3b (Ibrido statico):** A 12 core con $6\times 2$, E10 **VINCE** su E3b ($5.68$ vs $5.15$, IQR disgiunti). A 8, 10 e 14 core con $T=2$, E10 è indistinguibile da E3b per sovrapposizione degli IQR. Con $T=3$ ($4\times 3$), E10 perde nettamente su E3b ($4.36$ vs $5.14$).
+  - **E10 vs E2b (MPI puro statico):** E10 è statisticamente **indistinguibile** da E2b a 8, 10, 12 ($6\times 2$) e 14 core.
+  - **E10 vs E1c (OpenMP close):** A 12 core ($6\times 2$) e 14 core ($7\times 2$ con chunk 50 e 200), E10 **VINCE** su E1c ($5.68$ vs $5.34$, e $6.43$ vs $5.86$, IQR disgiunti).
+
 ---
 
 ### 6. Catalogo Grafici Aggiornati (`graphs/m13/`)
