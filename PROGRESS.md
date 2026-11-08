@@ -813,24 +813,26 @@ sudo bash -c 'for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
 
 **Campagna discriminante E4c (`results_e4c_smt_ecore_discrim.csv`):** Per discriminare formalmente l'ipotesi di rallentamento SMT rispetto all'assegnazione a E-core, ciascun container è stato vincolato a una singola CPU logica tramite file compose override dedicati (`deploy/docker-compose.override.e4c_*.yml`):
 
-| Configurazione | $p$ | CPU Logiche Assegnate | $T_{wall}$ (s) [IQR] | $T_{verify}$ (s) [IQR] | $Gen(chunk)$ stim. (s) | $Ping$ (ms) | $Residuo$ (ms) [IQR] | Throughput (sig/s) |
-|---|---|---|---|---|---|---|---|---|
-| `p2_pcores` | 2 | {0, 2} (2 P-cores distinti) | 1.0086 [0.9999–1.0149] | 0.5740 [0.5681–0.5774] | 0.3850 | 1.3 | 432.9 [416.5–444.9] | 19.830 |
-| `p2_smt` | 2 | {0, 1} (SMT stesso P-core) | 1.5525 [1.5471–1.6100] | 0.9072 [0.9010–0.9192] | 0.6150 | 1.1 | 649.9 [637.9–683.8] | 12.883 |
-| `p6_pcores` | 6 | {0, 2, 4, 6, 8, 10} (6 P-cores) | 0.4659 [0.4624–0.4714] | 0.2573 [0.2532–0.2610] | 0.1284 | 1.2 | 209.8 [201.6–212.5] | 42.924 |
-| `p8_ecores` | 8 | {0, 2, 4, 6, 8, 10, 12, 14} (6P+2E) | 0.4979 [0.4929–0.5013] | 0.2822 [0.2797–0.2827] | 0.1875 | 1.3 | 213.9 [212.8–219.8] | 40.169 |
-| `p8_smt` | 8 | {0, 2, 4, 6, 8, 10, 1, 3} (6P+2SMT) | 0.4240 [0.4216–0.4393] | 0.2455 [0.2445–0.2475] | 0.1537 | 1.3 | 176.8 [176.1–183.7] | 47.165 |
-| `p12_ecores` | 12 | 6 P-cores + 6 E-cores {0..10, 12..17} | 0.3662 [0.3656–0.3679] | 0.2071 [0.2063–0.2075] | 0.1250 | 1.1 | 158.5 [156.9–160.1] | 54.621 |
-| `p14_ecores` | 14 | 6 P-cores + 8 E-cores {0..10, 12..19} | 0.3164 [0.3123–0.3179] | 0.1772 [0.1763–0.1778] | 0.1072 | 1.2 | 138.0 [134.3–139.4] | 63.208 |
+| Configurazione | $p$ | CPU Logiche Assegnate | $T_{wall}$ (s) [IQR] | $T_{verify}$ (s) [IQR] | $Gen(chunk)$ (s) [Metodo] | $Ping$ (ms) | Residuo Lordo (ms) [IQR] | Residuo Netto (ms) | Throughput (sig/s) |
+|---|---|---|---|---|---|---|---|---|---|
+| `p2_pcores` | 2 | {0, 2} (2 P-cores distinti) | 1.0086 [0.9999–1.0149] | 0.5740 [0.5681–0.5774] | 0.3850 [misurato, 38.5 µs/dev] | 1.3 | 432.9 [416.5–444.9] | 48.3 | 19.830 |
+| `p2_smt` | 2 | {0, 1} (SMT stesso P-core) | 1.5525 [1.5471–1.6100] | 0.9072 [0.9010–0.9192] | 0.6150 [stimato, fattore 1.60×] | 1.1 | 649.9 [637.9–683.8] | 29.2 | 12.883 |
+| `p6_pcores` | 6 | {0, 2, 4, 6, 8, 10} (6 P-cores) | 0.4659 [0.4624–0.4714] | 0.2573 [0.2532–0.2610] | 0.1284 [stimato, 38.5 µs/dev]* | 1.2 | 209.8 [201.6–212.5] | 79.0 | 42.924 |
+| `p8_ecores` | 8 | {0, 2, 4, 6, 8, 10, 12, 14} (6P+2E) | 0.4979 [0.4929–0.5013] | 0.2822 [0.2797–0.2827] | 0.1875 [stimato, fattore 1.95×] | 1.3 | 213.9 [212.8–219.8] | 26.9 | 40.169 |
+| `p8_smt` | 8 | {0, 2, 4, 6, 8, 10, 1, 3} (6P+2SMT) | 0.4240 [0.4216–0.4393] | 0.2455 [0.2445–0.2475] | 0.1537 [stimato, fattore 1.60×] | 1.3 | 176.8 [176.1–183.7] | 23.5 | 47.165 |
+| `p12_ecores` | 12 | 6 P-cores + 6 E-cores {0..10, 12..17} | 0.3662 [0.3656–0.3679] | 0.2071 [0.2063–0.2075] | 0.1250 [stimato, fattore 1.95×] | 1.1 | 158.5 [156.9–160.1] | 33.0 | 54.621 |
+| `p14_ecores` | 14 | 6 P-cores + 8 E-cores {0..10, 12..19} | 0.3164 [0.3123–0.3179] | 0.1772 [0.1763–0.1778] | 0.1072 [stimato, fattore 1.95×] | 1.2 | 138.0 [134.3–139.4] | 30.8 | 63.208 |
+
+*Nota di misurazione sul controllo a 6 processi:* Misurando `bench_device_gen` con 6 processi simultanei pinnati su CPU 0, 2, 4, 6, 8, 10 (10 ripetizioni), il costo di generazione per device risulta $41.61\,\mu\text{s}$ (IQR $0.67\,\mu\text{s}$) rispetto ai $38.5\,\mu\text{s}$ isolati; con questo dato il tempo di generazione a $p=6$ sarebbe $138.7\text{ ms}$ e il residuo netto $68.7\text{ ms}$.
 
 - **Esiti del test discriminante:**
   - **Test 1 (SMT puro a $p=2$):** La collocazione su due thread hardware dello stesso core fisico (`p2_smt`) rallenta la verifica di un fattore $\mathbf{1.58\times}$ ($0.9072\text{ s}$ vs $0.5740\text{ s}$) e la generazione di $\mathbf{1.60\times}$ ($61.5\,\mu\text{s}$ vs $38.5\,\mu\text{s}$ per firma). Il tempo totale passa da $1.0086\text{ s}$ a $1.5525\text{ s}$ ($1.54\times$), confermando che la contesa delle pipeline di esecuzione tra thread hardware rallenta entrambi i container.
-  - **Test 2 (P-cores puri a $p=6$):** Con 6 container isolati ciascuno sul proprio P-core, $T_{verify} = 0.2573\text{ s}$, la generazione stimata è $0.1284\text{ s}$, e il residuo netto non computazionale ($T_{wall} - T_{verify} - Gen - Ping$) è pari a soli $\mathbf{81.4\text{ ms}}$.
+  - **Test 2 (P-cores puri a $p=6$):** Con 6 container isolati ciascuno sul proprio P-core, $T_{verify} = 0.2573\text{ s}$, la generazione stimata è $0.1284\text{ s}$, e il residuo netto ($T_{wall} - T_{verify} - Gen - Ping$) è pari a **$79.0\text{ ms}$** (o $68.7\text{ ms}$ se calcolato con la generazione misurata a 6 processi concorrenti). Questo residuo netto elevato non è previsto né dall'ipotesi SMT né da quella E-core; il dato viene riportato come misurato e resta non spiegato.
   - **Test 3 (Discriminazione a $p=8$ tra E-cores e SMT):**
-    - Sotto `p8_ecores`, il tempo di verifica è fissato dai due worker su E-core ($0.2822\text{ s}$), e la generazione sul worker più lento richiede $187.5\text{ ms}$ ($75\,\mu\text{s} \times 2.500$). Il residuo totale è $213.9\text{ ms}$ (residuo netto $26.4\text{ ms}$).
-    - Sotto `p8_smt`, i due worker su thread SMT completano la verifica in $0.2455\text{ s}$ (sensibilmente più veloci dell'E-core), e la generazione su thread SMT richiede $153.7\text{ ms}$ ($61.5\,\mu\text{s} \times 2.500$). Il residuo totale scende a $176.8\text{ ms}$ (residuo netto $23.1\text{ ms}$).
-    - Gli intervalli IQR tra `p8_ecores` e `p8_smt` per $T_{wall}$, $T_{verify}$ e residuo sono **completamente disgiunti** (nessuna sovrapposizione).
-  - **Origine del residuo:** I dati mostrano che il fenomeno del residuo a $p \ge 8$ è **pienamente compatibile con la combinazione della generazione dati asimmetrica e della latenza di coordinamento gRPC**: una volta sottratto il costo di generazione del worker sul percorso critico, il vero costo infrastrutturale (serializzazione gRPC, passaggio cgroup e scheduling asincrono) è compreso tra **23 e 33 ms** a $p \ge 8$. Il dato di rallentamento di $1.68\times$ su coppia SMT corrisponde a quanto misurato in `hpc-engine/results/m13/results_e9_capacity.csv` (riga 7, configurazione `c_smt_pair`, dove 2 thread su CPU 0 e 1 impiegano $1.7924\text{ s}$ per 40.000 firme contro $1.0663\text{ s}$ di un P-core isolato a riga 4).
+    - Sotto `p8_ecores`, il tempo di verifica è fissato dai due worker su E-core ($0.2822\text{ s}$), e la generazione sul worker più lento richiede $187.5\text{ ms}$ ($75\,\mu\text{s} \times 2.500$). Il residuo lordo è $213.9\text{ ms}$ e il residuo netto scende a **$26.9\text{ ms}$** (~27 ms).
+    - Sotto `p8_smt`, i due worker su thread SMT completano la verifica in $0.2455\text{ s}$ (sensibilmente più veloci dell'E-core), e la generazione su thread SMT richiede $153.7\text{ ms}$ ($61.5\,\mu\text{s} \times 2.500$). Il residuo lordo scende a $176.8\text{ ms}$ e il residuo netto a **$23.5\text{ ms}$**. A $p=8$, mettere due container su thread SMT dello stesso core fisico è meno lento di metterne due su E-core ($T_{wall} = 0.424\text{ s}$ contro $0.498\text{ s}$).
+    - Gli intervalli IQR tra `p8_ecores` e `p8_smt` per $T_{wall}$, $T_{verify}$ e residuo lordo sono **completamente disgiunti** (nessuna sovrapposizione).
+  - **Sintesi sul residuo gRPC:** Con ogni container pinnato a una CPU logica, il residuo netto scende da ~75 ms (E4 non pinnato, $p=8$) a ~25 ms (23.5–26.9 ms a $p=8$, 31–33 ms a $p \ge 12$). A $p=8$ mettere due container su thread SMT dello stesso core è meno lento di metterne due su E-core ($T_{wall} = 0.424\text{ s}$ contro $0.498\text{ s}$). Il residuo a $p=6$ (79 ms) resta non spiegato. Il dato di rallentamento di $1.68\times$ su coppia SMT corrisponde a quanto misurato in `hpc-engine/results/m13/results_e9_capacity.csv` (riga 7, configurazione `c_smt_pair`, dove 2 thread su CPU 0 e 1 impiegano $1.7924\text{ s}$ per 40.000 firme contro $1.0663\text{ s}$ di un P-core isolato a riga 4).
 4. **Impatto sul report precedente (M11.5):**
    - In `hpc-engine/benchmarks/run_full_campaign.py` (riga 67), `network_overhead = max(0.0, rpc_latency - worker_time)` sottraeva la verifica dal tempo RPC, includendo la generazione dati.
    - Di conseguenza, in `report/main.tex` (riga 154, riga 193, Tabella 2, Figura 4 e Sezione 7.3), l'asintoto a ~87k sig/s attribuito interamente a "HTTP/2 framing e passaggio dello stack di rete Linux" è stato in realtà limitato dalla generazione sequenziale delle firme a bordo dei worker.
@@ -1079,8 +1081,8 @@ Campagna eseguita con `hpc_engine_mpi_dynamic` con binding esplicito a core fisi
 
 ### 3. Origine del Residuo gRPC (W3 & E4c)
 - L'overhead residuo a $p \ge 8$ non è dovuto al client asincrono Python (costo di Ping = 1.1–1.3 ms).
-- **Test discriminante E4c (`results_e4c_smt_ecore_discrim.csv`):** Assegnando ciascun container a una CPU logica esclusiva, a $p=2$ la configurazione SMT (`p2_smt`) rallenta verifica e generazione di $1.58\times$ e $1.60\times$ rispetto a core fisici distinti (`p2_pcores`). A $p=8$, la configurazione con 2 E-core (`p8_ecores`) e quella con 2 thread SMT (`p8_smt`) si distinguono nettamente (T_wall $0.498\text{ s}$ vs $0.424\text{ s}$, T_verify $0.282\text{ s}$ vs $0.245\text{ s}$, residuo $213.9\text{ ms}$ vs $176.8\text{ ms}$, IQR completamente disgiunti).
-- Il residuo a $p \ge 8$ è **compatibile con l'asimmetria della generazione dati** a bordo del worker sul percorso critico: una volta dedotta la generazione ($187.5\text{ ms}$ su E-core, $153.7\text{ ms}$ su SMT), l'overhead infrastrutturale gRPC effettivo scende a soli **23–33 ms**. Il dato di rallentamento di $1.68\times$ su thread SMT è coerente con `results_e9_capacity.csv` (riga 7, `c_smt_pair`).
+- **Test discriminante E4c (`results_e4c_smt_ecore_discrim.csv`):** Assegnando ciascun container a una CPU logica esclusiva, a $p=2$ la configurazione SMT (`p2_smt`) rallenta verifica e generazione di $1.58\times$ e $1.60\times$ rispetto a core fisici distinti (`p2_pcores`). A $p=8$, la configurazione con 2 E-core (`p8_ecores`) e quella con 2 thread SMT (`p8_smt`) si distinguono nettamente ($T_{wall} = 0.498\text{ s}$ vs $0.424\text{ s}$, $T_{verify} = 0.282\text{ s}$ vs $0.245\text{ s}$, residuo lordo $213.9\text{ ms}$ vs $176.8\text{ ms}$, IQR completamente disgiunti).
+- Con ogni container pinnato a una CPU logica il residuo netto scende da ~75 ms (E4 non pinnato, $p=8$) a ~25 ms (23.5–26.9 ms a $p=8$, 31–33 ms a $p \ge 12$). A $p=8$ mettere due container su thread SMT dello stesso core è meno lento di metterne due su E-core ($T_{wall} = 0.424\text{ s}$ contro $0.498\text{ s}$). Il residuo a $p=6$ (79 ms) resta non spiegato. Il dato di rallentamento di $1.68\times$ su thread SMT è coerente con `results_e9_capacity.csv` (riga 7, `c_smt_pair`).
 
 ### 4. Revisione Confronti Statistici (W4)
 - **Ibrido vs Puri:** A $p=20$, gli intervalli IQR di MPI puro ($S=8.81$), OpenMP close ($S=8.37$) e Ibrido ($S=8.30$) sono sovrapposti; l'ibrido **non vince** a $p=20$ ed è statisticamente indistinguibile dai modelli puri. A pari core fisici (E3b), l'ibrido è comparabile o leggermente inferiore a MPI puro.
@@ -1099,8 +1101,8 @@ Completati i rank dispari mancanti di E2b ($R = 9, 11, 13$, 10 ripetizioni con `
 ### 2. Test Discriminante SMT vs E-cores su Container gRPC (X2)
 Eseguita la campagna E4c vincolando ciascun container gRPC a una specifica CPU logica esclusiva tramite file compose override (`results_e4c_smt_ecore_discrim.csv`):
 - A $p=2$: `p2_smt` ({0, 1}) rallenta verifica ($1.58\times$) e generazione ($1.60\times$) rispetto a due P-core distinti `p2_pcores` ({0, 2}).
-- A $p=8$: il test distingue nettamente l'ipotesi E-core (`p8_ecores`: $T_{wall} = 0.498\text{ s}$, $T_{verify} = 0.282\text{ s}$, residuo $213.9\text{ ms}$) dall'ipotesi SMT (`p8_smt`: $T_{wall} = 0.424\text{ s}$, $T_{verify} = 0.245\text{ s}$, residuo $176.8\text{ ms}$). Tutti gli intervalli IQR sono disgiunti.
-- L'overhead residuo a $p \ge 8$ è **compatibile con l'asimmetria della generazione dati**: detratta la generazione sul percorso critico, il vero costo infrastrutturale gRPC è confinato a **23–33 ms**.
+- A $p=8$: il test distingue nettamente l'ipotesi E-core (`p8_ecores`: $T_{wall} = 0.498\text{ s}$, $T_{verify} = 0.282\text{ s}$, residuo lordo $213.9\text{ ms}$) dall'ipotesi SMT (`p8_smt`: $T_{wall} = 0.424\text{ s}$, $T_{verify} = 0.245\text{ s}$, residuo lordo $176.8\text{ ms}$). Tutti gli intervalli IQR sono disgiunti.
+- Con ogni container pinnato a una CPU logica il residuo netto scende da ~75 ms (E4 non pinnato, $p=8$) a ~25 ms (23.5–26.9 ms a $p=8$, 31–33 ms a $p \ge 12$). A $p=8$ mettere due container su thread SMT dello stesso core è meno lento di metterne due su E-core ($T_{wall} = 0.424\text{ s}$ contro $0.498\text{ s}$). Il residuo a $p=6$ (79 ms) resta non spiegato.
 
 ### 3. Benchmark E10: Master-Worker Dinamico Ibrido (X3)
 Misurate 10 ripetizioni intercalate di E10 (`hpc_engine_mpi_dynamic` con `--map-by slot:PE=T --bind-to core`, chunk $25\cdot T$ e $100\cdot T$):
@@ -1113,13 +1115,7 @@ Misurate 10 ripetizioni intercalate di E10 (`hpc_engine_mpi_dynamic` con `--map-
 - Rigenerati tutti i grafici (`fig_a_strong_scaling` e `fig_b_parallel_efficiency`).
 
 ### 5. Stato Esperimento E7 Pipeline Reale (X5)
-Come concordato, l'esperimento E7 su pipeline end-to-end è sospeso poiché i 3 stack esterni (Compose base, IoTronic e Pipeline) sono spenti. Per eseguire E7 in una sessione dedicata, il comando di pre-check per verificare lo stato dell'infrastruttura prima del lancio è:
-```bash
-# Pre-check E7: verifica che i servizi gRPC, gateway e IoTronic siano online
-curl -s http://localhost:8000/health | grep -q "ok" && \
-curl -s http://localhost:8812/v1/boards | grep -q "boards" && \
-python3 -c "import grpc, sys; sys.path.insert(0, 'satellite/app'); import pipeline_pb2, pipeline_pb2_grpc; ch = grpc.insecure_channel('localhost:50051'); stub = pipeline_pb2_grpc.PipelineWorkerStub(ch); res = stub.Ping(pipeline_pb2.google_dot_protobuf_dot_empty__pb2.Empty(), timeout=2.0); print('Worker-1 Health:', res.healthy)"
-```
+Come concordato, l'esperimento E7 su pipeline end-to-end è sospeso poiché i 3 stack esterni (Compose base, IoTronic e Pipeline) sono spenti. Se si vorrà eseguire E7, la procedura richiede l'avvio preliminare dei tre stack e si esegue con la Parte B di 13.3-bis e il test di integrazione del satellite (`satellite/tests/test_integration.py`) come gate di prontezza dell'infrastruttura.
 
 
 
