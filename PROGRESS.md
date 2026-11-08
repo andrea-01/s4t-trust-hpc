@@ -1237,3 +1237,49 @@ Completata la revisione finale di `report/main.tex` e l'estensione di `report/ve
 - Esteso `report/verify_numbers.py` con validazione esaustiva automatica di tutte le 56 celle di Tabella 5 e tutte le 60 celle di Tabella 6 contro i CSV grezzi (`results_e1c_omp_cores_close.csv`, `results_e2b_mpi_map_core.csv`, `results_e3_hybrid.csv`, `results_e3b_hybrid_map_core.csv`, `results_e4_grpc.csv`, `results_e6b_dynamic_map_core.csv`, `results_e10_dynamic_hybrid.csv`).
 - Verificata l'assenza di termini causali o enfatici non supportati.
 
+---
+
+## Stadio 13.5-quater — Ultime Correzioni di Formulazione in report/main.tex
+
+Revisione delle formulazioni causali e metodologiche in `report/main.tex` (nessuna compilazione locale di LaTeX; validazione numerica automatica con `report/verify_numbers.py`):
+
+### 1. Inversione di Direzione §7.6 (Q1)
+- Corretta la frase in §7.6 che asseriva erroneamente "$T_{\mathrm{wall}}$ remains substantially lower than $T_{\mathrm{compute}}$". Sostituita con:
+  "$T_{\mathrm{wall}}$ exceeds $T_{\mathrm{verify}}$ in all cases because it includes client dispatch, in-container device generation, and the residual quantified in Table~\ref{tab:e4c_discriminant}."
+
+### 2. Sostituzione Meccanismo Non Loggato Container non Pinnati con Dati E4c (Q2)
+- Sostituita la congettura sulla migrazione libera dei thread con i dati discriminanti di E4c (`results_e4c_smt_ecore_discrim.csv`):
+  - A $p=8$, pinnati a 6P+2E (`p8_ecores`) i worker gRPC raggiungono $S_{\mathrm{compute}} = 3.77$, allineandosi a MPI statico ($3.88$); pinnati a 6P+2SMT (`p8_smt`) raggiungono $S_{\mathrm{compute}} = 4.33$; non vincolati (E4) raggiungono $5.27$.
+  - Il piazzamento dello scheduler OS è coerente con il valore più alto non vincolato, ma quale placement sia stato scelto non è stato loggato.
+  - Esplicitato che il confronto E4 vs E2b a $p \ge 8$ non è un confronto a parità di piazzamento hardware.
+  - Definita la metrica $T_{\mathrm{verify}}$ in E4 come \texttt{verify\_s} aggregata al massimo sui worker ($\max_i T_{\mathrm{verify}, i}$, equivalente a \texttt{MPI\_MAX} in MPI) sia nel testo sia nel caption di Tabella 5.
+  - A $p=20$, chiarito che $S_{\mathrm{compute}} = 9.11$ supera $C_{\mathrm{static}}(20) = 8.74$ e si avvicina a $C_{\mathrm{dyn}}(20) = 10.20$ perché i container non vincolati evitano il blocco sincronizzato alla barriera dei core lenti.
+
+### 3. Fenomeno P-core Pinnati a $p=6$ (§7.6 e §8 Limitazioni, Q3)
+- Inserita in §7.6 e in §8 (Limitazioni) la quantificazione esatta del deficit prestazionale a $p=6$ con container vincolati a 6 P-core distinti (`p6_pcores`, Tabella 8):
+  - $T_{\mathrm{verify}} = 0.2573\,\text{s} \implies S_{\mathrm{compute}} = 4.13$ vs $5.32$ di MPI sugli stessi 6 P-core ($-22\%$), con residuo infrastrutturale di $68.7$--$79.0$\,ms.
+  - Dichiarato esplicitamente che né il deficit né il residuo sono spiegati da ipotesi testate; introdotta come ipotesi non testata la competizione per i P-core tra processo client, Docker daemon e stack di rete del kernel quando nessuna CPU host rimane libera.
+
+### 4. Rimozione Spiegazioni Causali Non Supportate su E10 (§7.2 e Conclusioni, Q4)
+- In §7.2 item 3, eliminata l'attribuzione a "intra-chunk thread dispatch" e "tail imbalance across heterogeneous cores":
+  "The idle coordinator cores account for part of the performance difference. A larger chunk ($c=200$) gives $4.68$ [4.55--5.08], indistinguishable from $c=50$ ($5.03$ [4.62--5.15] at $R=10$); the gap to E6b therefore does not close with chunk size, and its cause was not identified."
+- In Conclusioni punto 3, sostituito "due to coordinator idle cores and OpenMP fork-join overhead across small chunks" con:
+  "partly because the coordinator rank holds $T$ idle cores; the remaining gap was not attributed to a tested cause".
+
+### 5. Rimozione Spiegazione Non Provata su OpenMP 16t unbound vs close (§7.3, Q5)
+- In §7.3, rimossa la spiegazione non provata ("leaving some E-cores underutilized") sul differenziale $\approx 15\%$ a $T=16$ tra unbound ($7.69$, E5; $7.49$, E1) e close ($6.68$, E1c).
+- Riformulato: "The difference ($\approx 15\%$) between unbound ($7.69$, E5; $7.49$, E1) and close binding ($6.68$, E1c) at $T=16$ was not isolated experimentally. With \texttt{OMP\_PLACES=cores}, $T > 14$ places two threads on SMT siblings of some P-cores; whether this explains the gap was not tested. Dynamic dispatch mitigates core speed divergence by allowing faster P-cores to consume additional chunks while E-cores complete their initial assignments."
+
+### 6. Rimozione Numeri di Riga e Correzione Meccanismo MPI Master (§6.2 e §7.1, Q6)
+- In §6.2 (walkthrough E10): rimossi i numeri di riga nel codice sorgente e corretto "polling requests" con la primitiva reale bloccante:
+  "receiving worker requests via blocking \texttt{MPI\_Recv} and dispatching chunks, without verifying signatures; see \texttt{main\_mpi\_dynamic.cpp}".
+- In §7.1 (post-Tabella 5): inseriti gli IQR esatti per E3 ($4.51$ [4.48--4.52] e $6.34$ [6.29--6.38]) ed esplicitata la fonte della mappatura:
+  "according to the binding flags (\texttt{--map-by slot:PE=T --bind-to hwthread}, Table~\ref{tab:binding_hardware}; logged in \texttt{e3.log} via Open MPI \texttt{--report-bindings})".
+
+### 7. Audit Grep su Parole Causali (Q7)
+- Eseguito audit completo nel file `report/main.tex` su tutte le 23 occorrenze di `because|arises|reflects|due to|accounts for|explains|stems from|allows`:
+  - 18 occorrenze risultano direttamente sostenute da dati sperimentali di baseline, profili Callgrind, o formule definitorie con citazione esplicita del test/tabella.
+  - 5 occorrenze prive di supporto sperimentale diretto sono state neutralizzate o convertite in ipotesi esplicitamente qualificate come non testate.
+- Rieseguito `python3 report/verify_numbers.py`: tutti i test numerici, strutturali e di label superati con esito **`[SUCCESS]`**.
+
+
