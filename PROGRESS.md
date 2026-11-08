@@ -1277,9 +1277,42 @@ Revisione delle formulazioni causali e metodologiche in `report/main.tex` (nessu
   "according to the binding flags (\texttt{--map-by slot:PE=T --bind-to hwthread}, Table~\ref{tab:binding_hardware}; logged in \texttt{e3.log} via Open MPI \texttt{--report-bindings})".
 
 ### 7. Audit Grep su Parole Causali (Q7)
-- Eseguito audit completo nel file `report/main.tex` su tutte le 23 occorrenze di `because|arises|reflects|due to|accounts for|explains|stems from|allows`:
-  - 18 occorrenze risultano direttamente sostenute da dati sperimentali di baseline, profili Callgrind, o formule definitorie con citazione esplicita del test/tabella.
-  - 5 occorrenze prive di supporto sperimentale diretto sono state neutralizzate o convertite in ipotesi esplicitamente qualificate come non testate.
+- Eseguito audit completo nel file `report/main.tex` sulle occorrenze di `because|arises|reflects|due to|accounts for|explains|stems from|allows`:
+  - Occorrenze sostenute da dati sperimentali di baseline, profili Callgrind, o formule definitorie con citazione esplicita del test/tabella.
+  - Occorrenze prive di supporto sperimentale diretto neutralizzate o convertite in ipotesi esplicitamente qualificate come non testate.
+  - *Rettifiche Stadio 13.5-quinquies:* (a) chiarito che L355 ("dynamic scheduling lets faster workers request more chunks") è la definizione concettuale del task-farming dinamico, non un dato misurato di distribuzione chunk per rank (nessun CSV/tabella traccia i chunk per singolo rank); (b) L123 epurata da "because" e la discrepanza tra per-verify e $T_1/N$ dichiarata come causa non isolata (l'overhead del timer di 12.8 ns è lo 0.02% e non spiega i 4.2 µs); (c) L616 a $p=20$ rettificata dichiarando che la causa del superamento di $C_{\mathrm{static}}$ non è stata testata (il placement dell'OS non è stato loggato).
 - Rieseguito `python3 report/verify_numbers.py`: tutti i test numerici, strutturali e di label superati con esito **`[SUCCESS]`**.
+
+---
+
+## Stadio 13.5-quinquies — Ultime Correzioni su Formattazione Tabelle e Formulazioni (F1–F4)
+
+Completata la revisione finale di `report/main.tex` (nessuna compilazione locale di LaTeX; validazione automatica dei dati con `report/verify_numbers.py`):
+
+### 1. Rettifica §2.2 Micro-benchmark vs Baseline (F1)
+- Eliminata la spiegazione contraddetta dalla misura che attribuiva i ~4.2 µs (7%) di differenza tra la media per-verify ($57.42\,\mu$s) e $T_1/N$ ($53.18\,\mu$s) all'overhead del timer.
+- Riscritto: "With $CV \approx 12.7\%$, individual tasks have nearly uniform computational duration. The mean per-verification cost ($57.42\,\mu$s; median $55.71\,\mu$s) exceeds $T_1 / N$ ($53.18\,\mu$s) by about $4.2\,\mu$s (7\%). The timer overhead (12.8\,ns) is too small to account for this; the cause was not isolated (the two measurements differ in how the call is timed and in the surrounding loop). The per-call figures are used only to size the agglomeration granularity (\S\ref{sec:agglomeration}); $T_1$ is the denominator of all speedups."
+
+### 2. Rettifica Causa Non Testata a $p=20$ (§7.6, F2)
+- Rimossa la spiegazione causale non testata ("because the metric is a maximum across workers, this elevated throughput reflects the scheduler avoiding the rigid barrier lockstep...").
+- Sostituita con: "At $p=20$, $S_{\mathrm{compute}} = 9.11$ exceeds $C_{\mathrm{static}}(20) = 8.74$ and approaches $C_{\mathrm{dyn}}(20) = 10.20$; the cause was not tested (the placement chosen by the OS was not logged)."
+- Reclassificata nel log di audit da "sostenuta" a "non testata".
+
+### 3. Risoluzione Tabelle Fuori Margine / Overfull hbox (F3)
+Risolti gli overfull hbox delle tre tabelle senza alterare i dati numerici:
+- **Tabella 5 (`tab:speedup_summary`, ~53 pt overfull):**
+  - Impostato `\setlength{\tabcolsep}{4.5pt}` e racchiuso il tabular in `\resizebox{\textwidth}{!}{% ... %}`.
+  - Spostata la nota estesa fuori da `\caption{...}` in un blocco `\vspace{2pt}{\footnotesize\raggedright ...\par}` posizionato sotto `\label{tab:speedup_summary}`, evitando che le stringhe non sillababili (es. flag di binding) sforino i margini.
+- **Tabella 6 (`tab:equal_cores_comparison`, ~122 pt overfull):**
+  - Accorciata l'intestazione di colonna `\textbf{E10 Dyn Hybrid}` $\to$ `\textbf{E10}`.
+  - Impostato `\setlength{\tabcolsep}{3.5pt}` e racchiuso il tabular in `\resizebox{\textwidth}{!}{% ... %}` per un perfetto contenimento entro `\textwidth`.
+- **Tabella 7 (`tab:e4c_discriminant`, ~64 pt overfull):**
+  - Impostato `\setlength{\tabcolsep}{4pt}` e racchiuso il tabular in `\resizebox{\textwidth}{!}{% ... %}`.
+
+### 4. Rettifica Classificazioni Audit Q7 (F4)
+- **F4a (L355):** Sostituito `allows` con `lets` ("Dynamic scheduling lets faster workers request more chunks than slower workers, yielding higher aggregate throughput") e chiarito che si tratta della definizione del modello di task farming dinamico, non di una misurazione sperimentale di chunk per rank.
+- **F4b (L123):** Verificata l'eliminazione totale di `because` in §2.2.
+- Rieseguito `python3 report/verify_numbers.py`: **100% test superati con esito `[SUCCESS]`**.
+
 
 

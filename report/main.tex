@@ -120,7 +120,7 @@ The verification latency exhibits:
     \item Median (p50): $55.71\,\mu$s, 90th percentile (p90): $59.73\,\mu$s, 99th percentile (p99): $87.44\,\mu$s
     \item Minimum: $50.79\,\mu$s, Maximum: $269.32\,\mu$s
 \end{itemize}
-Because $CV \approx 12.7\%$, individual tasks have nearly uniform computational duration. The mean per-verification cost of $57.42\,\mu$s ($55.71\,\mu$s median) differs by $\approx 7\%$ from the amortized loop rate $T_1 / N = 1.0636\,\text{s} / 20{,}000 = 53.18\,\mu$s because the two measurements reflect different experimental conditions: the isolated micro-benchmark incurs per-call timer overhead and individual function dispatch, whereas $T_1$ executes continuous batch verification in a tight loop. The per-call mean is used strictly to inform task granularity in Agglomeration (\S\ref{sec:agglomeration}), while $T_1$ serves as the reference denominator for all speedup and efficiency calculations.
+With $CV \approx 12.7\%$, individual tasks have nearly uniform computational duration. The mean per-verification cost ($57.42\,\mu$s; median $55.71\,\mu$s) exceeds $T_1 / N$ ($53.18\,\mu$s) by about $4.2\,\mu$s (7\%). The timer overhead (12.8\,ns) is too small to account for this; the cause was not isolated (the two measurements differ in how the call is timed and in the surrounding loop). The per-call figures are used only to size the agglomeration granularity (\S\ref{sec:agglomeration}); $T_1$ is the denominator of all speedups.
 
 Algorithm~\ref{alg:batch_verify} presents the reference sequential baseline. Its execution time over $N = 20{,}000$ signatures on a single P-core thread, compiled with \texttt{-O2}, defines the baseline $T_1 = 1.0636$\,s (median of 10 runs of E0b, with an interquartile range of 0.0031\,s, yielding $18{,}804.8$\,signatures/s). $T_1$ serves as the denominator for all speedup and efficiency values in the M13 campaign.
 
@@ -352,7 +352,7 @@ The historical benchmark E2 used \texttt{--bind-to core} without \texttt{--map-b
 The trade-off between static and dynamic mapping reflects core homogeneity:
 \begin{itemize}[nosep]
   \item \textbf{Homogeneous regime ($R \le 6$):} When execution is allocated exclusively to identical P-cores, static partition achieves maximum efficiency. Dynamic master-worker schemes underperform because the coordinator thread consumes a full physical core without performing verifications.
-  \item \textbf{Heterogeneous regime ($R \ge 7$):} When slow E-cores enter the worker pool, static partitioning is bottlenecked by the slowest worker at the barrier. Dynamic scheduling allows faster P-cores to process multiple chunks while E-cores process fewer, yielding higher aggregate throughput.
+  \item \textbf{Heterogeneous regime ($R \ge 7$):} When slow E-cores enter the worker pool, static partitioning is bottlenecked by the slowest worker at the barrier. Dynamic scheduling lets faster workers request more chunks than slower workers, yielding higher aggregate throughput.
 \end{itemize}
 
 % =====================================================
@@ -460,6 +460,8 @@ Figure~\ref{fig:strong_scaling} displays strong scaling across execution models 
 
 \begin{table}[H]
 \centering\small
+\setlength{\tabcolsep}{4.5pt}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{rcccccccc}
 \toprule
 & \multicolumn{2}{c}{\textbf{OpenMP close (E1c)}} & \multicolumn{2}{c}{\textbf{MPI pure (E2b)}} & \multicolumn{2}{c}{\textbf{Hybrid (E3/E3b)}} & \multicolumn{2}{c}{\textbf{gRPC isolated (E4)}} \\
@@ -474,9 +476,13 @@ $p$ & $S$ [IQR] & $E$ & $S$ [IQR] & $E$ & $S$ [IQR] & $E$ & $S_{\mathrm{wall}}$ 
 16 & 6.68 [6.39--6.91] & 0.42 & 7.31 [6.49--7.43] & 0.46 & 7.68 [7.32--7.86]$^*$ & 0.48 & 3.50 [2.73--4.35] & 7.55 [7.34--7.79] \\
 20 & 8.37 [8.07--8.48] & 0.42 & 8.81 [8.22--9.19] & 0.44 & 8.30 [7.21--8.55]$^*$ & 0.42 & 3.53 [3.42--4.47] & 9.11 [8.80--9.32] \\
 \bottomrule
-\end{tabular}
-\caption{Speedup and parallel efficiency across concurrency paradigms for $p \in \{2, \dots, 20\}$. $^\dagger$Measured under E3b with strict physical core mapping (\texttt{--map-by slot:PE=T --bind-to core}); $^*$Measured under E3 with hardware-thread mapping (\texttt{--bind-to hwthread}); $p=2,4,6$ were not evaluated in hybrid mode ($R \ge 4, T \ge 2$). The two hybrid mappings are not directly comparable. Columns for gRPC isolated report the unpinned container grid benchmark (E4), where containers execute across all available host CPUs without core affinity. $S_{\mathrm{compute}}$ is evaluated on the maximum worker computation time ($\max_i T_{\mathrm{verify}, i}$, matching \texttt{MPI\_MAX} in MPI).}
+\end{tabular}%
+}
+\caption{Speedup and parallel efficiency across concurrency paradigms for $p \in \{2, \dots, 20\}$.}
 \label{tab:speedup_summary}
+\vspace{2pt}
+{\footnotesize\raggedright
+$^\dagger$Measured under E3b with strict physical core mapping (\texttt{--map-by slot:PE=T --bind-to core}); $^*$Measured under E3 with hardware-thread mapping (\texttt{--bind-to hwthread}); $p=2,4,6$ were not evaluated in hybrid mode ($R \ge 4, T \ge 2$). The two hybrid mappings are not directly comparable. Columns for gRPC isolated report the unpinned container grid benchmark (E4), where containers execute across all available host CPUs without core affinity. $S_{\mathrm{compute}}$ is evaluated on the maximum worker computation time ($\max_i T_{\mathrm{verify}, i}$, matching \texttt{MPI\_MAX} in MPI).\par}
 \end{table}
 
 At equal nominal concurrency $p$, according to the binding flags (\texttt{--map-by slot:PE=T --bind-to hwthread}, Table~\ref{tab:binding_hardware}; logged in \texttt{e3.log} via Open MPI \texttt{--report-bindings}), hardware-thread binding in historical campaign E3 populates SMT hardware threads on the P-cores before allocating E-cores. Consequently, at $p=8$ and $p=12$, hybrid E3 ($S = 4.51$ [4.48--4.52] and $6.34$ [6.29--6.38]) achieves higher speedup than E3b ($4.02$ [4.01--4.02] and $5.14$ [5.14--5.16]) and E2b ($3.88$ [3.76--3.99] and $5.49$ [5.46--5.54]) despite utilizing only 4 and 6 physical P-cores rather than 8 and 12 distinct physical cores. This performance difference stems from the underlying core allocation rather than algorithmic superiority; the rigorous comparison is therefore established at equal physical cores ($R$, \S\ref{sec:eval_physical_cores}).
@@ -501,9 +507,11 @@ Evaluating models as a function of allocated physical cores on selected core cou
 
 \begin{table}[H]
 \centering\small
+\setlength{\tabcolsep}{3.5pt}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{rcccccc}
 \toprule
-\textbf{Cores} & \textbf{E2b Static} & \textbf{E1c Close} & \textbf{E3b Static} & \textbf{E6b Dyn ($T=1$)} & \textbf{E10 Dyn Hybrid} & \textbf{Verdict (E6b vs E2b)} \\
+\textbf{Cores} & \textbf{E2b Static} & \textbf{E1c Close} & \textbf{E3b Static} & \textbf{E6b Dyn ($T=1$)} & \textbf{E10} & \textbf{Verdict (E6b vs E2b)} \\
 $R$ & $S$ [IQR] & $S$ [IQR] & $S$ [IQR] & $S$ [IQR] ($c=25$) & $S$ [IQR] & \\
 \midrule
 3  & 2.81 [2.71--2.86] & 2.68 [2.62--2.76] & --- & 1.93 [1.92--1.93] & --- & E6b loses ($-31.4\%$) \\
@@ -517,7 +525,8 @@ $R$ & $S$ [IQR] & $S$ [IQR] & $S$ [IQR] & $S$ [IQR] ($c=25$) & $S$ [IQR] & \\
 12 & 5.49 [5.46--5.54] & 5.34 [5.14--5.42] & 5.14 [5.14--5.16] & 7.24 [7.23--7.26] & 5.68 [5.50--5.86] & E6b wins ($+32.0\%$) \\
 14 & 6.40 [6.16--6.51] & 5.86 [5.61--6.13] & 6.01 [5.99--6.47] & 8.15 [8.09--8.19] & 6.43 [6.14--6.50] & E6b wins ($+27.4\%$) \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \caption{Speedup comparison indexed by allocated physical cores $R$. Verdicts derived from IQR overlap.}
 \label{tab:equal_cores_comparison}
 \end{table}
@@ -604,12 +613,14 @@ In the containerized gRPC benchmark, the total elapsed time decomposes into:
 \begin{equation}
 T_{\mathrm{wall}} = T_{\mathrm{verify}} + Gen(chunk) + Ping + \text{Residual}
 \end{equation}
-In benchmark E4, the reported metric $T_{\mathrm{verify}}$ corresponds to \texttt{verify\_s}, defined as the maximum computation time among all worker containers ($\max_i T_{\mathrm{verify}, i}$, matching the \texttt{MPI\_MAX} reduction in MPI). Worker compute speedup ($S_{\mathrm{compute}}$) tracks native MPI within $\sim 4\%$ on homogeneous P-cores at $p \in \{2, 4\}$ ($p=2$: $2.00$ vs $1.93$, $+3.8\%$; $p=4$: $3.63$ vs $3.71$, $-2.2\%$), with a moderate deficit at $p=6$ ($4.71$ vs $5.32$, $-11.4\%$). Furthermore, at $p=6$, containers pinned to six distinct P-cores (\texttt{p6\_pcores}) verify 22\% slower than MPI on the same cores ($S_{\mathrm{compute}} = 4.13$ vs $5.32$); this compute deficit and the residual of $68.7$--$79.0$\,ms are not explained by any hypothesis tested here (as an untested hypothesis, the client dispatch process, Docker daemon, and kernel network activity compete with the six pinned containers for P-cores when no unallocated host CPUs remain). At $p=8$, pinned to 6P+2E (\texttt{p8\_ecores}) the container workers reach $S_{\mathrm{compute}} = 3.77$, matching static MPI ($3.88$); pinned to 6P+2SMT (\texttt{p8\_smt}) they reach $4.33$; under unpinned E4 execution they reach $5.27$. The placement chosen by the operating system scheduler is therefore consistent with the higher unpinned value, but which placement the scheduler chose was not logged. Consequently, the E4 vs.\ E2b comparison at $p \ge 8$ is not an equal-placement comparison. At $p=20$, $S_{\mathrm{compute}} = 9.11$ exceeds $C_{\mathrm{static}}(20) = 8.74$ and approaches $C_{\mathrm{dyn}}(20) = 10.20$; because the metric is a maximum across workers, this elevated throughput reflects the scheduler avoiding the rigid barrier lockstep of pinned static cores. $T_{\mathrm{wall}}$ exceeds $T_{\mathrm{verify}}$ in all cases because it includes client dispatch, in-container device generation, and the residual quantified in Table~\ref{tab:e4c_discriminant}.
+In benchmark E4, the reported metric $T_{\mathrm{verify}}$ corresponds to \texttt{verify\_s}, defined as the maximum computation time among all worker containers ($\max_i T_{\mathrm{verify}, i}$, matching the \texttt{MPI\_MAX} reduction in MPI). Worker compute speedup ($S_{\mathrm{compute}}$) tracks native MPI within $\sim 4\%$ on homogeneous P-cores at $p \in \{2, 4\}$ ($p=2$: $2.00$ vs $1.93$, $+3.8\%$; $p=4$: $3.63$ vs $3.71$, $-2.2\%$), with a moderate deficit at $p=6$ ($4.71$ vs $5.32$, $-11.4\%$). Furthermore, at $p=6$, containers pinned to six distinct P-cores (\texttt{p6\_pcores}) verify 22\% slower than MPI on the same cores ($S_{\mathrm{compute}} = 4.13$ vs $5.32$); this compute deficit and the residual of $68.7$--$79.0$\,ms are not explained by any hypothesis tested here (as an untested hypothesis, the client dispatch process, Docker daemon, and kernel network activity compete with the six pinned containers for P-cores when no unallocated host CPUs remain). At $p=8$, pinned to 6P+2E (\texttt{p8\_ecores}) the container workers reach $S_{\mathrm{compute}} = 3.77$, matching static MPI ($3.88$); pinned to 6P+2SMT (\texttt{p8\_smt}) they reach $4.33$; under unpinned E4 execution they reach $5.27$. The placement chosen by the operating system scheduler is therefore consistent with the higher unpinned value, but which placement the scheduler chose was not logged. Consequently, the E4 vs.\ E2b comparison at $p \ge 8$ is not an equal-placement comparison. At $p=20$, $S_{\mathrm{compute}} = 9.11$ exceeds $C_{\mathrm{static}}(20) = 8.74$ and approaches $C_{\mathrm{dyn}}(20) = 10.20$; the cause was not tested (the placement chosen by the OS was not logged). $T_{\mathrm{wall}}$ exceeds $T_{\mathrm{verify}}$ in all cases because it includes client dispatch, in-container device generation, and the residual quantified in Table~\ref{tab:e4c_discriminant}.
 
 To isolate the sources of latency, campaign E4c pinned each worker container to an exclusive logical CPU (Table~\ref{tab:e4c_discriminant}).
 
 \begin{table}[H]
 \centering\small
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{lcp{3.0cm}ccccc}
 \toprule
 \textbf{Config} & $p$ & \textbf{Assigned CPUs} & $T_{\mathrm{wall}}$ (s) & $T_{\mathrm{verify}}$ (s) & $Gen$ (s) [Method] & \textbf{Net Res.} & \textbf{Net Res. (Conc.)} \\
@@ -622,7 +633,8 @@ To isolate the sources of latency, campaign E4c pinned each worker container to 
 \texttt{p12\_ecores}& 12& 6P + 6E $\{12..17\}$ & 0.3662 & 0.2071 & 0.1250 [estimated] & 33.0\,ms & --- \\
 \texttt{p14\_ecores}& 14& 6P + 8E $\{12..19\}$ & 0.3164 & 0.1772 & 0.1072 [estimated] & 30.8\,ms & --- \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \caption{Discriminative container pinning experiment (E4c). Net residual reflects $T_{\mathrm{wall}} - T_{\mathrm{verify}} - Gen - Ping$, with $Ping = 1.33$\,ms. Values marked [estimated] compute $Gen$ as $(N/p) \times \tau_{\mathrm{gen}}$ with isolated sequential baseline $\tau_{\mathrm{gen}} = 38.50\,\mu$s on P-cores ($73.1\,\mu$s on E-cores); for \texttt{p2\_pcores}, $Gen = 0.3850$\,s uses the same $38.5\,\mu$s factor over $10{,}000$ devices. For \texttt{p2\_smt}, $Gen = 0.6150$\,s assumes an SMT slowdown factor ($\tau_{\mathrm{gen}} = 61.5\,\mu$s), an assumption on which the $29.2$\,ms residual depends. For \texttt{p6\_pcores}, the concurrent control column uses measured $\tau_{\mathrm{gen}} = 41.61\,\mu$s ($Gen = 0.1387$\,s, yielding $68.7$\,ms).}
 \label{tab:e4c_discriminant}
 \end{table}
