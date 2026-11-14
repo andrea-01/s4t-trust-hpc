@@ -164,7 +164,7 @@ def plot_a_profile_breakdown():
     ax.set_xlabel("Simulated Instruction Fraction (% Ir)")
     ax.set_xlim(0, 40)
     ax.set_title(
-        "Task A: Flat Instruction Profile Breakdown (Valgrind Callgrind)\n"
+        "Flat Instruction Profile Breakdown (Valgrind Callgrind)\n"
         "ECDSA P-256 Workload (Single-Thread Sequential Baseline, Batch 500)"
     )
 

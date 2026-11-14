@@ -454,7 +454,7 @@ Figure~\ref{fig:strong_scaling} displays strong scaling across execution models 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.88\textwidth]{figures/fig_a_strong_scaling.pdf}
-\caption{Strong scaling speedup $S(p)$ on $N = 20{,}000$ signatures (10 repetitions per configuration, baseline $T_1 = 1.0636$\,s). Error bars denote 95\% bootstrap confidence intervals. Shaded zones represent P-cores ($p \le 6$), E-core addition ($7 \le p \le 14$), SMT addition ($15 \le p \le 20$), and oversubscription ($p > 20$). Curves $C_{\mathrm{static}}(p)$ and $C_{\mathrm{dyn}}(p)$ plot empirical capacity limits measured in E9b.}
+\caption{Strong scaling speedup $S(p)$ on $N = 20{,}000$ signatures (10 repetitions per configuration, baseline $T_1 = 1.0636$\,s; error bars are smaller than the markers, see Table~\ref{tab:speedup_summary} for numeric IQRs). Shaded zones represent P-cores ($p \le 6$), E-core addition ($7 \le p \le 14$), SMT addition ($15 \le p \le 20$), and oversubscription ($p > 20$). Curves $C_{\mathrm{static}}(p)$ and $C_{\mathrm{dyn}}(p)$ plot empirical capacity limits measured in E9b.}
 \label{fig:strong_scaling}
 \end{figure}
 
@@ -495,7 +495,7 @@ Figure~\ref{fig:karp_flatt} tracks the Karp-Flatt metric $e(p)$.
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.84\textwidth]{figures/fig_c_karp_flatt.pdf}
-\caption{Karp-Flatt metric $e(p)$ across concurrency models (10 repetitions, baseline $T_1 = 1.0636$\,s).}
+\caption{Karp-Flatt metric $e(p)$ across concurrency models (10 repetitions, baseline $T_1 = 1.0636$\,s; gRPC wall-clock points with $e(p) > 0.25$, reaching $0.76$ at $p=2$, are off-scale to preserve vertical resolution for in-memory execution models).}
 \label{fig:karp_flatt}
 \end{figure}
 
@@ -560,7 +560,7 @@ Figure~\ref{fig:taskbased_scaling} examines \texttt{taskloop} execution under va
 \label{fig:taskbased_scaling}
 \end{figure}
 
-Across grain sizes ($g \in \{10, 50, 100, 500\}$ across $T \in \{4, 8, 12, 20\}$ threads), grain sizes 50 and 100 give the highest throughput (reaching $180.5$\,ksig/s and $178.6$\,ksig/s at $T=20$); grain size 10 remains limited near $19.2$--$19.3$\,ksig/s across all thread counts due to task creation overhead; grain size 500 is lower at $T=8$ ($110.9$\,ksig/s) and $T=12$ ($126.9$\,ksig/s) due to coarse-grained load imbalance.
+Across grain sizes ($g \in \{10, 50, 100, 500\}$ across $T \in \{4, 8, 12, 20\}$ threads), grain sizes 50 and 100 achieve the highest throughput at full concurrency (reaching $180.5$\,ksig/s and $178.6$\,ksig/s at $T=20$). Grain size 10 remains limited near $19.2$--$19.3$\,ksig/s across all thread counts due to task creation overhead. At $T=4$, grain size 50 also exhibits $19.27$\,ksig/s [IQR: $0.12$\,ksig/s, $19.21$--$19.32$\,ksig/s], matching grain size 10, before scaling to $112.7$\,ksig/s at $T=8$ (the cause of this initial lower throughput at $T=4$ was not isolated experimentally). Grain size 500 is lower at $T=8$ ($110.9$\,ksig/s) and $T=12$ ($126.9$\,ksig/s) due to coarse-grained load imbalance.
 
 \subsection{Machine Capacity and Capacity-Relative Efficiency}\label{sec:eval_capacity}
 
@@ -595,7 +595,7 @@ Figure~\ref{fig:amdahl_fit} shows the Amdahl projection fitted on static MPI (E2
 \label{fig:amdahl_fit}
 \end{figure}
 
-For static MPI (E2b), the estimated serial fraction on $p \le 4$ is $f_s = 2.80\%$ [95\% bootstrap CI: $2.33\%,\; 4.01\%$]. For OpenMP close (E1c), the fit on $p \le 4$ gives $f_s = 4.48\%$ [95\% bootstrap CI: $3.27\%,\; 5.77\%$]. These parameters capture early scalability loss on the homogeneous P-cores.
+For static MPI (E2b), the estimated serial fraction on $p \le 4$ is $f_s = 2.80\%$ [95\% bootstrap CI: $2.33\%,\; 4.01\%$]. For OpenMP close (E1c), the fit on $p \le 4$ gives $f_s = 4.47\%$ [95\% bootstrap CI: $3.27\%,\; 5.77\%$]. These parameters capture early scalability loss on the homogeneous P-cores.
 For MPI (E2b), the model predicts speedup accurately at $p = 6$: predicted $S = 5.26\times$ vs.\ measured $S = 5.32\times$ (1.1\% discrepancy). Beyond $p = 6$, measured speedups diverge from the Amdahl curve. This deviation is consistent with the empirical capacity curve $C_{\mathrm{dyn}}(p)$ of the heterogeneous processor, rather than an increase in algorithmic serial code.
 
 \subsection{gRPC Isolated Benchmark and Latency Breakdown}\label{sec:eval_grpc}

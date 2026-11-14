@@ -1359,5 +1359,32 @@ Completata la revisione integrale e rigenerazione di tutte le figure del report 
 - Esecuzione di `python3 report/verify_numbers.py`: **100% test superati con esito `[SUCCESS]`**.
 - Aggiornato `report/TRACEABILITY.md` con il mapping tra figure e CSV in `report/figure_data/`.
 
+---
+
+## Stadio 13.5-septies — Rifinitura Figure, Rimozione Conflitti di Numerazione e Coerenza (H1–H5)
+
+Completata la revisione finale di grafici e testo:
+
+### 1. Risoluzione Punto Anomalo Taskloop Grain=50 a $T=4$ (§7.3 e Fig. 9, H1)
+- Verificato da `results_e6_taskbased.csv` che a $T=4$ per `grain=50` il valore misurato è reale e vale mediana $19{,}271.7$\,sig/s ($19.27$\,ksig/s), IQR $118.4$\,sig/s [$19{,}205.2, 19{,}323.6$\,sig/s], perfettamente coincidente con `grain=10` ($19.28$\,ksig/s).
+- Aggiornato il testo di §7.3 in `report/main.tex` per descrivere fedelmente la transizione:
+  "At $T=4$, grain size 50 also exhibits $19.27$\,ksig/s [IQR: $0.12$\,ksig/s, $19.21$--$19.32$\,ksig/s], matching grain size 10, before scaling to $112.7$\,ksig/s at $T=8$ (the cause of this initial lower throughput at $T=4$ was not isolated experimentally)."
+
+### 2. Rimozione Prefissi di Numerazione Interna dai Grafici (H2)
+- Rimossi tutti i prefissi "Fig. X — " e "Task A: " dai titoli matplotlib in `generate_m13_graphs.py` e `generate_report_graphs.py`, eliminando il conflitto visivo con la numerazione progressiva di LaTeX (Figure 2, 6, 7, 8, 9, 10, 11, 12).
+
+### 3. Riposizionamento e Risoluzione Sovrapposizioni Legende (H3)
+- **Fig. 10 (`plot_fig_b`):** La legenda è stata spostata all'esterno dell'area dati, posizionata sotto l'asse x (`loc="upper center"`, `bbox_to_anchor=(0.5, -0.15)`, `ncol=3`), lasciando completamente libera la regione in alto a destra. L'etichetta dell'area SMT ($y=1.04$) e la terminazione della curva $C_{\mathrm{dyn}}/p$ ($y=0.51$ a $p=20$) sono ora visibili senza alcuna occlusione. Dimensioni figura estese a `(8.5, 6.0)`.
+- **Fig. 8 (`plot_fig_g`):** Eliminata la legenda ridondante in basso a destra (le barre sono già etichettate in modo univoco sull'asse y con `static`, `guided`, `dynamic,16`), rendendo visibile l'etichetta del valore `144.7 ksig/s` della barra static.
+
+### 4. Coerenza Numerica e Didascalie (H4)
+- **Fig. 11:** Allineato il valore di $f_s$ per OpenMP close a $4.47\%$ sia nella legenda del grafico sia nel testo di §7.5 in `report/main.tex` (valore calcolato esatto $0.04466$).
+- **Fig. 6:** Rettificata la didascalia LaTeX in `report/main.tex` dichiarando: "error bars are smaller than the markers, see Table~\ref{tab:speedup_summary} for numeric IQRs", allineando la didascalia all'aspetto visivo del grafico.
+- **Fig. 7:** Esplicitato nella didascalia LaTeX in `report/main.tex` che i punti di gRPC wall a $p$ basso ($e(2)=0.76 > 0.25$) sono intenzionalmente fuori scala per preservare la risoluzione verticale dei modelli in-memory.
+
+### 5. Controlli e Verifica (H5)
+- Rieseguito `python3 report/verify_numbers.py`: **100% test superati con esito `[SUCCESS]`**.
+- Rigenerati tutti i grafici e aggiornati i file vettoriali e raster in `report/figures/`.
+
 
 

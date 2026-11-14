@@ -203,7 +203,7 @@ def plot_fig_a() -> None:
     ax.set_xticks(range(1, 21))
     ax.set_xlabel("Effective parallelism $p$ (cores / hardware threads)")
     ax.set_ylabel("Strong Scaling Speedup $S(p) = T_1 / T_p$")
-    ax.set_title("Fig. A — Comparative Strong Scaling (ECDSA P-256 Batch 20,000)")
+    ax.set_title("Comparative Strong Scaling (ECDSA P-256 Batch 20,000)")
     ax.legend(loc="upper left", framealpha=0.9, fontsize=8.5)
 
     save_fig_and_data(fig, "fig_a_strong_scaling", data_rows, "fig06_strong_scaling")
@@ -212,7 +212,7 @@ def plot_fig_a() -> None:
 # FIG B (Fig. 10 in Report): Parallel Efficiency
 # ==============================================================================
 def plot_fig_b() -> None:
-    fig, ax = plt.subplots(figsize=(8.5, 5.5))
+    fig, ax = plt.subplots(figsize=(8.5, 6.0))
     data_rows = []
 
     # Threshold lines
@@ -311,9 +311,17 @@ def plot_fig_b() -> None:
     ax.set_xticks(range(1, 21))
     ax.set_xlabel("Effective parallelism $p$")
     ax.set_ylabel("Parallel Efficiency $E(p) = S(p) / p$")
-    ax.set_title("Fig. B — Parallel Efficiency $E(p)$ vs Number of Workers")
-    # G5: Move legend to upper right where data quadrant (p>=10, E>=0.55) is completely empty!
-    ax.legend(loc="upper right", framealpha=0.92, fontsize=8.5)
+    ax.set_title("Parallel Efficiency $E(p)$ vs Number of Workers")
+    # H3: Move legend outside data area below the x-axis in 3 columns
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=3,
+        framealpha=0.92,
+        fontsize=8.2,
+        columnspacing=1.0,
+        handletextpad=0.4
+    )
 
     save_fig_and_data(fig, "fig_b_parallel_efficiency", data_rows, "fig10_parallel_efficiency")
 
@@ -409,7 +417,7 @@ def plot_fig_c() -> None:
     ax.set_xticks(range(2, 21))
     ax.set_xlabel("Effective parallelism $p$")
     ax.set_ylabel(r"Karp-Flatt Metric $e(p) = \frac{1/S(p) - 1/p}{1 - 1/p}$")
-    ax.set_title("Fig. C — Karp-Flatt Metric $e(p)$ (Algorithmic Overhead vs Contention)")
+    ax.set_title("Karp-Flatt Metric $e(p)$ (Algorithmic Overhead vs Contention)")
     ax.legend(loc="upper left", framealpha=0.9, fontsize=8.5)
 
     save_fig_and_data(fig, "fig_c_karp_flatt", data_rows, "fig07_karp_flatt")
@@ -518,7 +526,7 @@ def plot_fig_d() -> None:
     ax.set_xticks(range(1, 21))
     ax.set_xlabel("Effective parallelism $p$")
     ax.set_ylabel("Speedup $S(p)$")
-    ax.set_title(r"Fig. D — Amdahl's Law Fit on $p \leq 4$ and Projection for $p > 4$ (E2b and E1c)")
+    ax.set_title(r"Amdahl's Law Fit on $p \leq 4$ and Projection for $p > 4$ (E2b and E1c)")
     ax.legend(loc="upper left", framealpha=0.9, fontsize=8.0)
 
     save_fig_and_data(fig, "fig_d_amdahl_fit", data_rows, "fig11_amdahl_fit")
@@ -562,7 +570,7 @@ def plot_fig_e() -> None:
 
     ax.set_xlabel("Threads per rank ($T$)")
     ax.set_ylabel("MPI Ranks ($R$)")
-    ax.set_title("Fig. E — Hybrid MPI+OpenMP Performance Grid ($R \\times T$)\n(★ denotes odd $T=3,5$ sharing core via SMT)")
+    ax.set_title("Hybrid MPI+OpenMP Performance Grid ($R \\times T$)\n(★ denotes odd $T=3,5$ sharing core via SMT)")
 
     save_fig_and_data(fig, "fig_e_hybrid_heatmap", data_rows, "fig_e_hybrid_heatmap")
 
@@ -610,7 +618,7 @@ def plot_fig_f() -> None:
     ax.set_ylim(0, 200)
     ax.set_xlabel("Number of logical workers / nodes ($p$)")
     ax.set_ylabel("Throughput (k sig/s)")
-    ax.set_title("Fig. F — Containerized gRPC (E4) vs Native MPI Pure (E2b)")
+    ax.set_title("Containerized gRPC (E4) vs Native MPI Pure (E2b)")
     ax.legend(loc="upper left", framealpha=0.9)
 
     save_fig_and_data(fig, "fig_f_grpc_vs_mpi", data_rows, "fig12_grpc_vs_mpi")
@@ -648,14 +656,9 @@ def plot_fig_g() -> None:
     ax.set_xlim(0, 205)
     ax.set_xlabel("Throughput (k sig/s)")
     ax.set_ylabel("OpenMP Schedule Clause")
-    ax.set_title("Fig. G — OpenMP Scheduling Overhead Comparison ($T=16$, E5)")
+    ax.set_title("OpenMP Scheduling Overhead Comparison ($T=16$, E5)")
 
-    legend_elements = [
-        Patch(facecolor="#1f77b4", edgecolor="black", label="Static"),
-        Patch(facecolor="#2ca02c", edgecolor="black", label="Guided"),
-        Patch(facecolor="#ff7f0e", edgecolor="black", label="Dynamic"),
-    ]
-    ax.legend(handles=legend_elements, loc="lower right", framealpha=0.9)
+    # H3: Redundant legend removed as y-axis tick labels identify each bar and values are directly annotated without occlusion
 
     save_fig_and_data(fig, "fig_g_openmp_schedules", data_rows, "fig08_openmp_schedules")
 
@@ -714,7 +717,7 @@ def plot_fig_h() -> None:
     ax.set_xticks([1, 4, 8, 12, 16, 20])
     ax.set_xlabel("Workers / Ranks ($p$)")
     ax.set_ylabel("Throughput (k sig/s)")
-    ax.set_title("Fig. H — Dynamic Task-based Scaling: OpenMP Taskloop vs MPI Dynamic")
+    ax.set_title("Dynamic Task-based Scaling: OpenMP Taskloop vs MPI Dynamic")
     ax.legend(loc="upper left", framealpha=0.9, fontsize=8.5)
 
     save_fig_and_data(fig, "fig_h_taskbased_scaling", data_rows, "fig09_taskbased_scaling")
@@ -780,7 +783,7 @@ def plot_fig_i() -> None:
     ax.set_xticks(range(1, 13))
     ax.set_xlabel("Effective parallelism $p$")
     ax.set_ylabel("Speedup $S(p)$")
-    ax.set_title("Fig. I — Heterogeneity Impact: P-cores (0-11) vs All Cores (E8 vs E1c/E2b)")
+    ax.set_title("Heterogeneity Impact: P-cores (0-11) vs All Cores (E8 vs E1c/E2b)")
     ax.legend(loc="upper left", framealpha=0.9)
 
     save_fig_and_data(fig, "fig_i_pcores_vs_all", data_rows, "fig_i_pcores_vs_all")
