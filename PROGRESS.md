@@ -1386,5 +1386,16 @@ Completata la revisione finale di grafici e testo:
 - Rieseguito `python3 report/verify_numbers.py`: **100% test superati con esito `[SUCCESS]`**.
 - Rigenerati tutti i grafici e aggiornati i file vettoriali e raster in `report/figures/`.
 
+---
+
+## Stadio 13.5-octies — Nota sulla Dispersione di S_wall in Tabella 5 / §7.6
+
+- Analizzate le distribuzioni sperimentali di $S_{\mathrm{wall}}$ in `results_e4_grpc.csv` per $p=16$ e $p=20$:
+  - A $p=16$, la colonna aggrega 20 campioni (10 per $4\times 4$ con $S_{\mathrm{wall}} \in [2.03, 3.02]$, e 10 per $16\times 1$ con $S_{\mathrm{wall}} \in [3.97, 4.53]$), con mediana $3.50$ e IQR $[2.73, 4.35]$ (range $[2.03, 4.53]$).
+  - A $p=20$, la colonna aggrega 20 campioni (10 per $5\times 4$ con $S_{\mathrm{wall}} \in [2.70, 3.54]$, e 10 per $20\times 1$ con $S_{\mathrm{wall}} \in [3.24, 5.08]$), con mediana $3.53$ e IQR $[3.42, 4.47]$ (range $[2.70, 5.08]$), di cui 6 campioni superano $\text{mediana} + 0.5$.
+- Aggiunta in §7.6 di `report/main.tex` la quantificazione esatta della dispersione e la spiegazione del pooling tra le due topologie di container, qualificando la variabilità intra-topologia come non investigata.
+- Aggiunto rimando dinamico `(see Section~\ref{sec:eval_grpc} for the dispersion of $S_{\mathrm{wall}}$)` nella didascalia e nella nota di Tabella 5 (`tab:speedup_summary`).
+- Rieseguito `python3 report/verify_numbers.py`: **100% test superati con esito `[SUCCESS]`**.
+
 
 
