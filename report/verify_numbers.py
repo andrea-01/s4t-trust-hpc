@@ -319,6 +319,105 @@ for n, s_m, s_p, exp_gap in p_gaps:
     gap = (s_p - s_m) / s_p * 100.0
     check(abs(gap - exp_gap) < 0.2, f"Pipeline n={n}: Gap = {gap:.1f}% matches expected {exp_gap:.1f}%")
 
+print("\n=== 11. Figure Data Anti-Regression and Consistency Checks (G1-G5) ===")
+fig_data_dir = Path("report/figure_data")
+expected_files = [
+    "fig02_profile.csv",
+    "fig06_strong_scaling.csv",
+    "fig07_karp_flatt.csv",
+    "fig08_openmp_schedules.csv",
+    "fig09_taskbased_scaling.csv",
+    "fig10_parallel_efficiency.csv",
+    "fig11_amdahl_fit.csv",
+    "fig12_grpc_vs_mpi.csv",
+]
+for fn in expected_files:
+    fp = fig_data_dir / fn
+    check(fp.exists(), f"Figure data CSV exists: {fn}")
+
+# Check forbidden series across all figure_data CSVs
+forbidden_series = ["OpenMP bound (E1b)", "E1b", "MPI pure (E2)"]
+for fp in fig_data_dir.glob("*.csv"):
+    df_fig = pd.read_csv(fp)
+    if "series" in df_fig.columns:
+        for bad in forbidden_series:
+            has_bad = (df_fig["series"] == bad).any()
+            check(not has_bad, f"{fp.name}: Forbidden series '{bad}' absent")
+
+# Control points: fig06_strong_scaling.csv
+df06 = pd.read_csv(fig_data_dir / "fig06_strong_scaling.csv")
+def get_s06(series_name, x_val):
+    sub = df06[(df06["series"] == series_name) & (df06["x"] == x_val)]
+    return sub["y"].values[0] if len(sub) > 0 else None
+
+# MPI pure (E2b)
+check(abs(get_s06("MPI pure (E2b)", 2) - 1.93) < 0.05, f"Fig 06: MPI p=2 S = {get_s06('MPI pure (E2b)', 2):.2f} (matches 1.93, not 1.2)")
+check(abs(get_s06("MPI pure (E2b)", 6) - 5.32) < 0.05, f"Fig 06: MPI p=6 S = {get_s06('MPI pure (E2b)', 6):.2f} (matches 5.32)")
+check(abs(get_s06("MPI pure (E2b)", 7) - 3.35) < 0.05, f"Fig 06: MPI p=7 S = {get_s06('MPI pure (E2b)', 7):.2f} (matches 3.35)")
+check(abs(get_s06("MPI pure (E2b)", 8) - 3.88) < 0.05, f"Fig 06: MPI p=8 S = {get_s06('MPI pure (E2b)', 8):.2f} (matches 3.88)")
+check(abs(get_s06("MPI pure (E2b)", 20) - 8.81) < 0.05, f"Fig 06: MPI p=20 S = {get_s06('MPI pure (E2b)', 20):.2f} (matches 8.81)")
+
+# OpenMP close (E1c)
+check(abs(get_s06("OpenMP close (E1c)", 6) - 5.23) < 0.05, f"Fig 06: OpenMP close p=6 S = {get_s06('OpenMP close (E1c)', 6):.2f} (matches 5.23)")
+check(abs(get_s06("OpenMP close (E1c)", 20) - 8.37) < 0.05, f"Fig 06: OpenMP close p=20 S = {get_s06('OpenMP close (E1c)', 20):.2f} (matches 8.37)")
+
+# Capacities
+check(abs(get_s06("Capacity static (E9b)", 20) - 8.74) < 0.05, f"Fig 06: C_static(20) = {get_s06('Capacity static (E9b)', 20):.2f} (matches 8.74)")
+check(abs(get_s06("Capacity dynamic (E9b)", 20) - 10.20) < 0.05, f"Fig 06: C_dyn(20) = {get_s06('Capacity dynamic (E9b)', 20):.2f} (matches 10.20)")
+
+# gRPC wall vs compute
+check(abs(get_s06("gRPC wall (E4)", 2) - 1.14) < 0.05, f"Fig 06: gRPC wall p=2 S = {get_s06('gRPC wall (E4)', 2):.2f} (matches 1.14)")
+check(abs(get_s06("gRPC wall (E4)", 20) - 3.53) < 0.05, f"Fig 06: gRPC wall p=20 S = {get_s06('gRPC wall (E4)', 20):.2f} (matches 3.53)")
+check(abs(get_s06("gRPC compute (E4)", 2) - 2.00) < 0.05, f"Fig 06: gRPC compute p=2 S = {get_s06('gRPC compute (E4)', 2):.2f} (matches 2.00)")
+check(abs(get_s06("gRPC compute (E4)", 20) - 9.11) < 0.05, f"Fig 06: gRPC compute p=20 S = {get_s06('gRPC compute (E4)', 20):.2f} (matches 9.11)")
+
+# Control points: fig07_karp_flatt.csv
+df07 = pd.read_csv(fig_data_dir / "fig07_karp_flatt.csv")
+def get_e07(series_name, x_val):
+    sub = df07[(df07["series"] == series_name) & (df07["x"] == x_val)]
+    return sub["y"].values[0] if len(sub) > 0 else None
+
+check(0.025 <= get_e07("MPI pure (E2b)", 2) <= 0.045, f"Fig 07: MPI p=2 e(2) = {get_e07('MPI pure (E2b)', 2):.4f} in [0.025, 0.045] (not broken ~0.61)")
+check(0.020 <= get_e07("MPI pure (E2b)", 6) <= 0.035, f"Fig 07: MPI p=6 e(6) = {get_e07('MPI pure (E2b)', 6):.4f} in [0.020, 0.035]")
+check(0.17 <= get_e07("MPI pure (E2b)", 7) <= 0.19, f"Fig 07: MPI p=7 e(7) = {get_e07('MPI pure (E2b)', 7):.4f} ~0.18")
+check(0.14 <= get_e07("MPI pure (E2b)", 8) <= 0.16, f"Fig 07: MPI p=8 e(8) = {get_e07('MPI pure (E2b)', 8):.4f} ~0.15")
+sub_e2b = df07[df07["series"] == "MPI pure (E2b)"]
+all_in_bounds = ((sub_e2b["y"] >= -0.01) & (sub_e2b["y"] <= 0.25)).all()
+check(all_in_bounds, "Fig 07: All Karp-Flatt values for MPI pure (E2b) in [-0.01, 0.25]")
+
+# Control points: fig08_openmp_schedules.csv
+df08 = pd.read_csv(fig_data_dir / "fig08_openmp_schedules.csv")
+def get_rate08(sched):
+    sub = df08[df08["schedule"] == sched]
+    return sub["throughput_ksig"].values[0] if len(sub) > 0 else None
+
+check(abs(get_rate08("static") - 144.7) < 0.2, f"Fig 08: static rate = {get_rate08('static'):.1f} ksig/s ~144.7")
+check(abs(get_rate08("guided") - 159.9) < 0.2, f"Fig 08: guided rate = {get_rate08('guided'):.1f} ksig/s ~159.9")
+check(abs(get_rate08("dynamic,16") - 173.0) < 0.2, f"Fig 08: dynamic,16 rate = {get_rate08('dynamic,16'):.1f} ksig/s ~173.0")
+
+# Control points: fig10_parallel_efficiency.csv
+df10 = pd.read_csv(fig_data_dir / "fig10_parallel_efficiency.csv")
+def get_eff10(series_name, x_val):
+    sub = df10[(df10["series"] == series_name) & (df10["x"] == x_val)]
+    return sub["y"].values[0] if len(sub) > 0 else None
+
+check(abs(get_eff10("MPI pure (E2b)", 2) - 0.966) < 0.02, f"Fig 10: MPI p=2 E = {get_eff10('MPI pure (E2b)', 2):.3f} ~0.97 (not 0.62)")
+check(abs(get_eff10("MPI pure (E2b)", 6) - 0.886) < 0.02, f"Fig 10: MPI p=6 E = {get_eff10('MPI pure (E2b)', 6):.3f} ~0.89")
+check(abs(get_eff10("OpenMP close (E1c)", 6) - 0.871) < 0.02, f"Fig 10: OpenMP close p=6 E = {get_eff10('OpenMP close (E1c)', 6):.3f} ~0.87")
+
+# Control points: fig12_grpc_vs_mpi.csv
+df12 = pd.read_csv(fig_data_dir / "fig12_grpc_vs_mpi.csv")
+def get_rate12(series_name, x_val):
+    sub = df12[(df12["series"] == series_name) & (df12["x"] == x_val)]
+    return sub["y"].values[0] if len(sub) > 0 else None
+
+check(abs(get_rate12("MPI pure (E2b)", 2) - 36.3) < 0.5, f"Fig 12: MPI p=2 rate = {get_rate12('MPI pure (E2b)', 2):.1f} ksig/s ~36.3")
+rate_wall_20 = get_rate12("gRPC wall (E4)", 20)
+rate_comp_20 = get_rate12("gRPC compute (E4)", 20)
+check(abs(rate_wall_20 - 66.5) < 1.0, f"Fig 12: gRPC wall p=20 rate = {rate_wall_20:.1f} ksig/s ~66.5")
+check(abs(rate_comp_20 - 171.3) < 1.0, f"Fig 12: gRPC compute p=20 rate = {rate_comp_20:.1f} ksig/s ~171.3")
+check(rate_comp_20 - rate_wall_20 > 100.0, f"Fig 12: gRPC compute is distinctly separated from wall (diff = {rate_comp_20 - rate_wall_20:.1f} ksig/s > 100)")
+
 if failed:
     print("\n[FAILURE] One or more verification checks failed!")
     sys.exit(1)

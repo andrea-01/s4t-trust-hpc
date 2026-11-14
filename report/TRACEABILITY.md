@@ -20,21 +20,21 @@ This document records the exact data provenance, raw and derived CSV sources, an
 
 ## 2. Figures Traceability
 
-| Figure in Report | Label | Description | Generating Script | Primary Data Source (CSV / Logs) |
-|---|---|---|---|---|
-| Figure 1 | `fig:verify_flow` | Verification control flow | Direct TikZ vector code in `main.tex` | Algorithm 1 specification |
-| Figure 2 | `fig:profile_breakdown` | Instruction profile breakdown | `hpc-engine/benchmarks/generate_report_graphs.py` (`plot_a_profile_breakdown()`) | `hpc-engine/results/callgrind_annotate.txt` (from `hpc-engine/results/callgrind.out`) |
-| Figure 3 | `fig:dep_graph` | Task dependency graph | Direct TikZ vector code in `main.tex` | Section 3 PCAM partitioning |
-| Figure 4 | `fig:pipeline_graph` | Pipeline functional graph | Direct TikZ vector code in `main.tex` | Section 3 PCAM pipeline decomposition |
-| Figure 5 | `fig:hybrid_architecture` | Two-tier hybrid architecture | Direct TikZ vector code in `main.tex` | Section 6 PCAM agglomeration |
-| Figure 6 | `fig:strong_scaling` | Strong scaling speedup $S(p)$ | `hpc-engine/benchmarks/generate_m13_graphs.py` | `derived_speedup.csv`, `v3_machine_capacity_curve.csv`, `results_e2b_mpi_map_core.csv` |
-| Figure 7 | `fig:karp_flatt` | Karp-Flatt serialization $e(p)$ | `hpc-engine/benchmarks/generate_m13_graphs.py` | `derived_karp_flatt.csv` |
-| Figure 8 | `fig:openmp_schedules` | 15 OpenMP schedules at $T=16$ | `hpc-engine/benchmarks/generate_m13_graphs.py` | `derived_schedule.csv`, `results_e5_schedule.csv` |
-| Figure 9 | `fig:taskbased_scaling` | Taskloop vs.\ dynamic MPI | `hpc-engine/benchmarks/generate_m13_graphs.py` | `derived_taskbased.csv`, `results_e6_taskbased.csv` |
-| Figure 10 | `fig:parallel_efficiency` | Parallel efficiency $E(p)$ & capacity bounds | `hpc-engine/benchmarks/generate_m13_graphs.py` | `derived_speedup.csv`, `v3_machine_capacity_curve.csv` |
-| Figure 11 | `fig:amdahl_fit` | Amdahl fit on $p \le 4$ with 95% CI | `hpc-engine/benchmarks/generate_m13_graphs.py` | `derived_amdahl.csv`, `results_e2b_mpi_map_core.csv` |
-| Figure 12 | `fig:grpc_vs_mpi` | gRPC wall & compute vs.\ MPI | `hpc-engine/benchmarks/generate_m13_graphs.py` | `results_e2b_mpi_map_core.csv`, `results_e4_grpc.csv` |
-| Figure 13 | `fig:pipeline_speedup` | Pipeline speedup vs.\ model | `hpc-engine/benchmarks/generate_report_graphs.py` (`plot_f_pipelining()`) | `hpc-engine/results/pipeline_throughput_i7_12700h_20260908.csv` |
+| Figure in Report | Label | Description | Generating Script | Primary Data Source (CSV / Logs) | Exported Plot Points CSV |
+|---|---|---|---|---|---|
+| Figure 1 | `fig:verify_flow` | Verification control flow | Direct TikZ vector code in `main.tex` | Algorithm 1 specification | — |
+| Figure 2 | `fig:profile_breakdown` | Instruction profile breakdown | `hpc-engine/benchmarks/generate_report_graphs.py` (`plot_a_profile_breakdown()`) | `profile_i7_12700h_20260908.txt` | `report/figure_data/fig02_profile.csv` |
+| Figure 3 | `fig:dep_graph` | Task dependency graph | Direct TikZ vector code in `main.tex` | Section 3 PCAM partitioning | — |
+| Figure 4 | `fig:pipeline_graph` | Pipeline functional graph | Direct TikZ vector code in `main.tex` | Section 3 PCAM pipeline decomposition | — |
+| Figure 5 | `fig:hybrid_architecture` | Two-tier hybrid architecture | Direct TikZ vector code in `main.tex` | Section 6 PCAM agglomeration | — |
+| Figure 6 | `fig:strong_scaling` | Strong scaling speedup $S(p)$ | `hpc-engine/benchmarks/generate_m13_graphs.py` | `results_e2b_mpi_map_core.csv`, `results_e1c_omp_cores_close.csv`, `results_e1_omp_pure.csv`, `results_e3b_hybrid_map_core.csv`, `results_e3_hybrid.csv`, `results_e4_grpc.csv`, `v3_machine_capacity_curve.csv` | `report/figure_data/fig06_strong_scaling.csv` |
+| Figure 7 | `fig:karp_flatt` | Karp-Flatt serialization $e(p)$ | `hpc-engine/benchmarks/generate_m13_graphs.py` | `results_e2b_mpi_map_core.csv`, `results_e1c_omp_cores_close.csv`, `results_e1_omp_pure.csv`, `results_e3b_hybrid_map_core.csv`, `results_e3_hybrid.csv`, `results_e4_grpc.csv` | `report/figure_data/fig07_karp_flatt.csv` |
+| Figure 8 | `fig:openmp_schedules` | OpenMP schedules at $T=16$ (static, guided, dynamic,16) | `hpc-engine/benchmarks/generate_m13_graphs.py` | `results_e5_schedule.csv` | `report/figure_data/fig08_openmp_schedules.csv` |
+| Figure 9 | `fig:taskbased_scaling` | Taskloop scaling ($g \in \{10, 50, 100, 500\}$) vs.\ dynamic MPI | `hpc-engine/benchmarks/generate_m13_graphs.py` | `results_e6_taskbased.csv`, `results_e6b_dynamic_map_core.csv` | `report/figure_data/fig09_taskbased_scaling.csv` |
+| Figure 10 | `fig:parallel_efficiency` | Parallel efficiency $E(p)$ & capacity bounds | `hpc-engine/benchmarks/generate_m13_graphs.py` | `results_e2b_mpi_map_core.csv`, `results_e1c_omp_cores_close.csv`, `results_e1_omp_pure.csv`, `results_e3b_hybrid_map_core.csv`, `results_e3_hybrid.csv`, `results_e4_grpc.csv`, `v3_machine_capacity_curve.csv` | `report/figure_data/fig10_parallel_efficiency.csv` |
+| Figure 11 | `fig:amdahl_fit` | Amdahl fit on $p \le 4$ (E2b, E1c) with 95% CI | `hpc-engine/benchmarks/generate_m13_graphs.py` | `results_e2b_mpi_map_core.csv`, `results_e1c_omp_cores_close.csv` | `report/figure_data/fig11_amdahl_fit.csv` |
+| Figure 12 | `fig:grpc_vs_mpi` | gRPC wall & compute vs.\ MPI | `hpc-engine/benchmarks/generate_m13_graphs.py` | `results_e2b_mpi_map_core.csv`, `results_e4_grpc.csv` | `report/figure_data/fig12_grpc_vs_mpi.csv` |
+| Figure 13 | `fig:pipeline_speedup` | Pipeline speedup vs.\ model | `hpc-engine/benchmarks/generate_report_graphs.py` (`plot_f_pipelining()`) | `hpc-engine/results/pipeline_throughput_i7_12700h_20260908.csv` | — |
 
 ---
 

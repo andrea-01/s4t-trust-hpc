@@ -86,6 +86,12 @@ def save_plot(fig, filename_base: str):
     fig.savefig(pdf_path)
     plt.close(fig)
     print(f"  [OK] Generated: graphs/{filename_base}.png & .pdf")
+    report_fig_dir = PROJECT_ROOT / "report" / "figures"
+    if report_fig_dir.exists():
+        import shutil
+        shutil.copy2(png_path, report_fig_dir / f"{filename_base}.png")
+        shutil.copy2(pdf_path, report_fig_dir / f"{filename_base}.pdf")
+        print(f"  [OK] Copied to report/figures/{filename_base}.*")
 
 
 def plot_segmented_line(ax, x_vals, y_vals, is_oversub, color, marker, label=None, linewidth=1.5, markersize=7):
@@ -118,6 +124,7 @@ def plot_a_profile_breakdown():
 
     # Bar labels without embedded percentages (percentages are shown beside bars)
     categories = [
+        ("Unattributed libc / runtime", 0.86, "#a0aec0"),
         ("Application / Harness", 1.80, "#4a5568"),
         ("Dynamic Memory (malloc / free)", 3.20, "#718096"),
         ("Other OpenSSL / libcrypto", 6.26, "#e28743"),
@@ -128,6 +135,14 @@ def plot_a_profile_breakdown():
         ("EC: __ecp_nistz256_mul_montq", 32.71, "#0c2340"),
         ("EC: Other EC curve primitives", 14.48, "#2b4c7e"),
     ]
+
+    fig_data_dir = PROJECT_ROOT / "report" / "figure_data"
+    fig_data_dir.mkdir(parents=True, exist_ok=True)
+    df_data = pd.DataFrame({
+        "category": [c[0] for c in categories],
+        "percentage": [c[1] for c in categories]
+    })
+    df_data.to_csv(fig_data_dir / "fig02_profile.csv", index=False)
 
     labels = [c[0] for c in categories]
     values = [c[1] for c in categories]

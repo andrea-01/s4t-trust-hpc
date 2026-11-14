@@ -1,0 +1,11 @@
+category,percentage
+Unattributed libc / runtime,0.86
+Application / Harness,1.8
+Dynamic Memory (malloc / free),3.2
+Other OpenSSL / libcrypto,6.26
+EC: BN_uadd / bn_div / shifts,7.1
+EC: point_double & avx2,7.71
+EC: ecp_nistz256_ord_sqr_mont,5.91
+EC: __ecp_nistz256_sqr_montq,19.97
+EC: __ecp_nistz256_mul_montq,32.71
+EC: Other EC curve primitives,14.48

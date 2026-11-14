@@ -1,0 +1,41 @@
+series,x,y
+"OpenMP (P-cores only, taskset 0-11)",1,1.0272471135149046
+"OpenMP (P-cores only, taskset 0-11)",2,2.0110179927396907
+"OpenMP (P-cores only, taskset 0-11)",3,2.852359306620586
+"OpenMP (P-cores only, taskset 0-11)",4,3.783916961034219
+"OpenMP (P-cores only, taskset 0-11)",6,5.241369379853996
+"OpenMP (P-cores only, taskset 0-11)",8,5.0585763228336
+"OpenMP (P-cores only, taskset 0-11)",10,5.473519162347697
+"OpenMP (P-cores only, taskset 0-11)",12,6.314654308900805
+"OpenMP (All cores, close)",1,0.9648662507784191
+"OpenMP (All cores, close)",2,1.9211295344185977
+"OpenMP (All cores, close)",3,2.6829885350944807
+"OpenMP (All cores, close)",4,3.564538895841376
+"OpenMP (All cores, close)",6,5.226865659431316
+"OpenMP (All cores, close)",8,3.7650287187997122
+"OpenMP (All cores, close)",10,4.691144744676835
+"OpenMP (All cores, close)",12,5.337618008573729
+"MPI pure (P-cores only, core binding)",1,1.0015774819987784
+"MPI pure (P-cores only, core binding)",2,1.9851169950789016
+"MPI pure (P-cores only, core binding)",3,2.881732141852582
+"MPI pure (P-cores only, core binding)",4,3.799197560008089
+"MPI pure (P-cores only, core binding)",5,4.4969853618997355
+"MPI pure (P-cores only, core binding)",6,5.386398187711705
+"MPI pure (P-cores only, core binding)",7,3.527955394611548
+"MPI pure (P-cores only, core binding)",8,4.006076116667964
+"MPI pure (P-cores only, core binding)",9,4.450227403463826
+"MPI pure (P-cores only, core binding)",10,4.802025772980986
+"MPI pure (P-cores only, core binding)",11,5.104252430955218
+"MPI pure (P-cores only, core binding)",12,5.567549714996913
+"MPI pure (All cores, core binding)",1,0.9831634395685765
+"MPI pure (All cores, core binding)",2,1.9312204746269246
+"MPI pure (All cores, core binding)",3,2.8068559318232245
+"MPI pure (All cores, core binding)",4,3.710771410216104
+"MPI pure (All cores, core binding)",5,4.450998777400016
+"MPI pure (All cores, core binding)",6,5.318092218427867
+"MPI pure (All cores, core binding)",7,3.351624598340897
+"MPI pure (All cores, core binding)",8,3.8758299062476143
+"MPI pure (All cores, core binding)",9,4.234470429982001
+"MPI pure (All cores, core binding)",10,4.7163780046838255
+"MPI pure (All cores, core binding)",11,4.912668200499937
+"MPI pure (All cores, core binding)",12,5.49016635987736

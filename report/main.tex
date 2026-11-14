@@ -540,12 +540,12 @@ Experimental observations indicate:
 
 \subsection{OpenMP Scheduling and Task-Based Parallelism}\label{sec:eval_openmp_sched}
 
-Figure~\ref{fig:openmp_schedules} compares OpenMP loop scheduling clauses across chunk sizes at $T = 16$ (utilizing 6 P-cores, 8 E-cores, and 2 SMT threads).
+Figure~\ref{fig:openmp_schedules} compares OpenMP loop scheduling clauses (\texttt{static}, \texttt{guided}, and the best-performing chunk \texttt{dynamic,16} from the parameter sweep) at $T = 16$ (utilizing 6 P-cores, 8 E-cores, and 2 SMT threads).
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.82\textwidth]{figures/fig_g_openmp_schedules.pdf}
-\caption{Throughput of 15 OpenMP scheduling clauses at $T = 16$ on $N = 20{,}000$ signatures (10 repetitions, E5).}
+\caption{Throughput of OpenMP scheduling clauses: static, guided, and dynamic,16 (best dynamic chunk from the E5 parameter sweep) at $T = 16$ on $N = 20{,}000$ signatures (10 repetitions, E5).}
 \label{fig:openmp_schedules}
 \end{figure}
 
@@ -556,11 +556,11 @@ Figure~\ref{fig:taskbased_scaling} examines \texttt{taskloop} execution under va
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.82\textwidth]{figures/fig_h_taskbased_scaling.pdf}
-\caption{Taskloop scaling across grain sizes vs.\ MPI master-worker (E6).}
+\caption{Taskloop scaling across grain sizes vs.\ MPI master-worker (E6). For MPI dynamic, $p = R$ represents total allocated ranks including the Rank 0 master coordinator.}
 \label{fig:taskbased_scaling}
 \end{figure}
 
-Taskloop execution achieves optimal throughput with intermediate task granularities ($\text{grainsize} \in [50, 200]$), trading task creation overhead against load balancing granularity.
+Across grain sizes ($g \in \{10, 50, 100, 500\}$ across $T \in \{4, 8, 12, 20\}$ threads), grain sizes 50 and 100 give the highest throughput (reaching $180.5$\,ksig/s and $178.6$\,ksig/s at $T=20$); grain size 10 remains limited near $19.2$--$19.3$\,ksig/s across all thread counts due to task creation overhead; grain size 500 is lower at $T=8$ ($110.9$\,ksig/s) and $T=12$ ($126.9$\,ksig/s) due to coarse-grained load imbalance.
 
 \subsection{Machine Capacity and Capacity-Relative Efficiency}\label{sec:eval_capacity}
 
@@ -586,17 +586,17 @@ When evaluated against the static capacity limit, static models saturate the ava
 
 \subsection{Amdahl's Law and Serial Fraction}\label{sec:eval_amdahl}
 
-Figure~\ref{fig:amdahl_fit} shows the Amdahl projection fitted on static MPI (E2b) for $p \le 4$.
+Figure~\ref{fig:amdahl_fit} shows the Amdahl projection fitted on static MPI (E2b) and OpenMP close (E1c) for $p \le 4$.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.84\textwidth]{figures/fig_d_amdahl_fit.pdf}
-\caption{Amdahl model fitted on $p \le 4$ with 95\% bootstrap confidence band vs.\ observed speedups (E2b and E1).}
+\caption{Amdahl model fitted on $p \le 4$ with 95\% bootstrap confidence band vs.\ observed speedups (E2b and E1c).}
 \label{fig:amdahl_fit}
 \end{figure}
 
-The estimated serial fraction on $p \le 4$ is $f_s = 2.80\%$ [95\% bootstrap CI: $2.33\%,\; 4.01\%$]. This parameter captures early scalability loss on the homogeneous P-cores.
-The model predicts speedup accurately at $p = 6$: predicted $S = 5.26\times$ vs.\ measured $S = 5.32\times$ (1.1\% discrepancy). Beyond $p = 6$, measured speedups diverge from the Amdahl curve. This deviation is consistent with the empirical capacity curve $C_{\mathrm{dyn}}(p)$ of the heterogeneous processor, rather than an increase in algorithmic serial code.
+For static MPI (E2b), the estimated serial fraction on $p \le 4$ is $f_s = 2.80\%$ [95\% bootstrap CI: $2.33\%,\; 4.01\%$]. For OpenMP close (E1c), the fit on $p \le 4$ gives $f_s = 4.48\%$ [95\% bootstrap CI: $3.27\%,\; 5.77\%$]. These parameters capture early scalability loss on the homogeneous P-cores.
+For MPI (E2b), the model predicts speedup accurately at $p = 6$: predicted $S = 5.26\times$ vs.\ measured $S = 5.32\times$ (1.1\% discrepancy). Beyond $p = 6$, measured speedups diverge from the Amdahl curve. This deviation is consistent with the empirical capacity curve $C_{\mathrm{dyn}}(p)$ of the heterogeneous processor, rather than an increase in algorithmic serial code.
 
 \subsection{gRPC Isolated Benchmark and Latency Breakdown}\label{sec:eval_grpc}
 

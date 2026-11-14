@@ -1,0 +1,124 @@
+series,x,y
+Linear ideal,1,1.0
+Linear ideal,2,2.0
+Linear ideal,3,3.0
+Linear ideal,4,4.0
+Linear ideal,5,5.0
+Linear ideal,6,6.0
+Linear ideal,7,7.0
+Linear ideal,8,8.0
+Linear ideal,9,9.0
+Linear ideal,10,10.0
+Linear ideal,11,11.0
+Linear ideal,12,12.0
+Linear ideal,13,13.0
+Linear ideal,14,14.0
+Linear ideal,15,15.0
+Linear ideal,16,16.0
+Linear ideal,17,17.0
+Linear ideal,18,18.0
+Linear ideal,19,19.0
+Linear ideal,20,20.0
+Capacity dynamic (E9b),1,0.9995
+Capacity static (E9b),1,0.9995
+Capacity dynamic (E9b),2,1.9977
+Capacity static (E9b),2,1.9943
+Capacity dynamic (E9b),3,2.8831
+Capacity static (E9b),3,2.8793
+Capacity dynamic (E9b),4,3.8151
+Capacity static (E9b),4,3.802
+Capacity dynamic (E9b),5,4.486
+Capacity static (E9b),5,4.4676
+Capacity dynamic (E9b),6,5.3833
+Capacity static (E9b),6,5.3611
+Capacity dynamic (E9b),7,5.9172
+Capacity static (E9b),7,3.5251
+Capacity dynamic (E9b),8,6.4243
+Capacity static (E9b),8,4.0292
+Capacity dynamic (E9b),9,6.9211
+Capacity static (E9b),9,4.5165
+Capacity dynamic (E9b),10,7.3893
+Capacity static (E9b),10,4.936
+Capacity dynamic (E9b),11,7.7444
+Capacity static (E9b),11,4.8258
+Capacity dynamic (E9b),12,8.2195
+Capacity static (E9b),12,5.2814
+Capacity dynamic (E9b),13,8.6817
+Capacity static (E9b),13,5.7038
+Capacity dynamic (E9b),14,9.1681
+Capacity static (E9b),14,6.1426
+Capacity dynamic (E9b),15,9.4211
+Capacity static (E9b),15,6.6033
+Capacity dynamic (E9b),16,9.6305
+Capacity static (E9b),16,7.0163
+Capacity dynamic (E9b),17,9.8028
+Capacity static (E9b),17,7.454
+Capacity dynamic (E9b),18,9.9736
+Capacity static (E9b),18,7.91
+Capacity dynamic (E9b),19,9.9783
+Capacity static (E9b),19,8.263
+Capacity dynamic (E9b),20,10.2039
+Capacity static (E9b),20,8.7355
+OpenMP unbound (E1),1,0.999007125643243
+OpenMP unbound (E1),2,1.9458982144902794
+OpenMP unbound (E1),3,2.760610671253185
+OpenMP unbound (E1),4,3.533815953486772
+OpenMP unbound (E1),6,4.293695735802439
+OpenMP unbound (E1),8,5.022094095276416
+OpenMP unbound (E1),10,5.6803378745853585
+OpenMP unbound (E1),12,6.3666210027447
+OpenMP unbound (E1),14,6.939125234293115
+OpenMP unbound (E1),16,7.49468706720192
+OpenMP unbound (E1),18,7.883637879510109
+OpenMP unbound (E1),20,7.814316483598156
+OpenMP close (E1c),1,0.9648662507784191
+OpenMP close (E1c),2,1.9211295344185977
+OpenMP close (E1c),3,2.6829885350944807
+OpenMP close (E1c),4,3.564538895841376
+OpenMP close (E1c),6,5.226865659431316
+OpenMP close (E1c),8,3.7650287187997122
+OpenMP close (E1c),10,4.691144744676835
+OpenMP close (E1c),12,5.337618008573729
+OpenMP close (E1c),14,5.862898955637311
+OpenMP close (E1c),16,6.67621306374548
+OpenMP close (E1c),18,7.730458823056383
+OpenMP close (E1c),20,8.374152360313563
+MPI pure (E2b),1,0.9831634395685765
+MPI pure (E2b),2,1.9312204746269246
+MPI pure (E2b),3,2.8068559318232245
+MPI pure (E2b),4,3.710771410216104
+MPI pure (E2b),5,4.450998777400016
+MPI pure (E2b),6,5.318092218427867
+MPI pure (E2b),7,3.351624598340897
+MPI pure (E2b),8,3.8758299062476143
+MPI pure (E2b),9,4.234470429982001
+MPI pure (E2b),10,4.7163780046838255
+MPI pure (E2b),11,4.912668200499937
+MPI pure (E2b),12,5.49016635987736
+MPI pure (E2b),13,5.893989767775694
+MPI pure (E2b),14,6.3971358467051544
+MPI pure (E2b),16,7.307766507334892
+MPI pure (E2b),18,7.761224165650203
+MPI pure (E2b),20,8.808425654940304
+Hybrid (E3b),8,4.019983654647961
+Hybrid (E3b),10,4.803785185459981
+Hybrid (E3b),12,5.1449815897563695
+Hybrid (E3b),14,6.010653070971408
+Hybrid (E3),16,7.851548466437391
+Hybrid (E3),20,8.303559788716075
+gRPC wall (E4),2,1.1371873394479368
+gRPC compute (E4),2,2.003913811423062
+gRPC wall (E4),4,2.0388058239286035
+gRPC compute (E4),4,3.6301736398518827
+gRPC wall (E4),6,2.2655182208496676
+gRPC compute (E4),6,4.713555651012673
+gRPC wall (E4),8,2.79627021554158
+gRPC compute (E4),8,5.272162652016152
+gRPC wall (E4),10,3.2743870783276403
+gRPC compute (E4),10,6.263118526427624
+gRPC wall (E4),12,3.255610208807794
+gRPC compute (E4),12,5.976600513651046
+gRPC wall (E4),16,3.4969350831447272
+gRPC compute (E4),16,7.550384665345948
+gRPC wall (E4),20,3.5345905544993252
+gRPC compute (E4),20,9.107917137401806

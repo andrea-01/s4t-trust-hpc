@@ -1,0 +1,4 @@
+series,schedule,throughput_ksig
+OpenMP schedule (E5),static,144.6845
+OpenMP schedule (E5),guided,159.8525
+OpenMP schedule (E5),"dynamic,16",172.98

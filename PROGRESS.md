@@ -1314,5 +1314,50 @@ Risolti gli overfull hbox delle tre tabelle senza alterare i dati numerici:
 - **F4b (L123):** Verificata l'eliminazione totale di `because` in §2.2.
 - Rieseguito `python3 report/verify_numbers.py`: **100% test superati con esito `[SUCCESS]`**.
 
+---
+
+## Stadio 13.5-sexies — Rigenerazione Grafici e Allineamento Figure-Tabelle-Dati (G1–G5)
+
+Completata la revisione integrale e rigenerazione di tutte le figure del report PDF (Overleaf) e l'esportazione dei relativi punti dati in `report/figure_data/`:
+
+### 1. Riscrittura Pipeline Grafici (`generate_m13_graphs.py` e `generate_report_graphs.py`, G1)
+- Identificata la causa radice delle discrepanze visive nel PDF compilato: i file intermedi `derived_speedup.csv`, `derived_karp_flatt.csv` e `derived_amdahl.csv` generati in Stadio 13.4 contenevano le vecchie esecuzioni viziate dal mapping SMT errato (E1b, vecchio E2).
+- Riscritto `hpc-engine/benchmarks/generate_m13_graphs.py` per leggere direttamente dai CSV grezzi canonici:
+  - `results_e1c_omp_cores_close.csv` (OpenMP close E1c)
+  - `results_e2b_mpi_map_core.csv` (MPI pure E2b con mapping core)
+  - `results_e3b_hybrid_map_core.csv` ($p=8..14$) e `results_e3_hybrid.csv` ($p=16, 20$) per il modello ibrido
+  - `results_e4_grpc.csv` (gRPC end-to-end wall e worker compute)
+  - `results_e5_schedule.csv` (OpenMP loop scheduling clauses)
+  - `results_e6_taskbased.csv` e `results_e6b_dynamic_map_core.csv` (Taskloop e MPI master-worker)
+  - `v3_machine_capacity_curve.csv` (Capacità empiriche $C_{\mathrm{static}}$ e $C_{\mathrm{dyn}}$ da E9b)
+- Eliminate completamente le serie vietate (E1b e vecchio E2 unremapped) da tutti i grafici.
+- Aggiornato `hpc-engine/benchmarks/generate_report_graphs.py` (`plot_a_profile_breakdown()`) per includere `"Unattributed libc / runtime"` allo $0.86\%$ (somma esatta $100.00\%$) ed esportare `report/figure_data/fig02_profile.csv`.
+
+### 2. Risoluzione Discrepanze Specifiche sulle Figure (G1–G5)
+- **Fig. 6 (`fig:strong_scaling`, G1):** Plottati i valori corretti di E2b ($S(2)=1.93$, $S(6)=5.32$, $S(7)=3.35$, $S(8)=3.88$, $S(20)=8.81$) ed E1c ($S(6)=5.23$, $S(20)=8.37$).
+- **Fig. 10 (`fig:parallel_efficiency`, G1):** Plottate le curve di efficienza canoniche ($E(2)=0.966$ per E2b, $E(6)=0.871$ per E1c). Legenda riposizionata in `loc="upper right"` nell'area vuota ($p \ge 10, E \ge 0.55$) senza sovrapposizioni alle curve.
+- **Fig. 7 (`fig:karp_flatt`, G1):** Karp-Flatt calcolato su E2b ($e(2)=0.0356$, $e(6)=0.0256$, salto a $e(7)=0.1814$ ed $e(8)=0.1520$ per eterogeneità di core). Tutti i punti per $p \ge 2$ compresi in $[-0.01, 0.25]$; eliminata l'anomalia precedente a $e(2)=0.61$.
+- **Fig. 11 (`fig:amdahl_fit`, G1/G5):** Fit del modello di Amdahl eseguito su $p \le 4$ per MPI E2b ($f_s = 2.80\%$ [$2.33\%,\; 4.01\%$]) e OpenMP close E1c ($f_s = 4.48\%$ [$3.27\%,\; 5.77\%$]) con bande di confidenza bootstrap 95%. Punti oltre $p=4$ visualizzati come marcatori vuoti (non inclusi nel fit).
+- **Fig. 12 (`fig:grpc_vs_mpi`, G2):** Risolta l'identità spuria tra le curve di throughput di wall e compute in gRPC (precedentemente sovrapposte a $85.6$\,ksig/s): la curva di calcolo worker compute ($S_{\mathrm{compute}} = 9.11$, $171.3$\,ksig/s a $p=20$) è nettamente separata dalla curva end-to-end wall ($S_{\mathrm{wall}} = 3.53$, $66.5$\,ksig/s a $p=20$). MPI pure E2b coerente ($36.3$\,ksig/s a $p=2$, $165.6$\,ksig/s a $p=20$).
+- **Fig. 8 (`fig:openmp_schedules`, G3 Opzione b):** 3 barre orizzontali a $T=16$ (\texttt{static} $144.7$\,ksig/s, \texttt{guided} $159.9$\,ksig/s, \texttt{dynamic,16} $173.0$\,ksig/s) etichettate in `ksig/s`. Aggiornata la didascalia e il testo di §7.3 in `report/main.tex` per indicare la selezione delle 3 clausole canoniche con il miglior chunk dynamic dal parameter sweep.
+- **Fig. 9 (`fig:taskbased_scaling`, G4):** Asse x esteso a $[0.5, 21.5]$ per prevenire tagli al margine destro a $T=20$ per OpenMP taskloop ($g \in \{10, 50, 100, 500\}$) e $R \in [4, 12]$ per MPI dinamico. Aggiornati testo e didascalia in `report/main.tex` per riflettere i grain size effettivi ($10, 50, 100, 500$) e chiarire che per MPI dynamic $p=R$ include il coordinatore Rank 0.
+
+### 3. Esportazione Dati Figure e Test Anti-Regressione
+- Tutti i grafici esportano automaticamente i vettori di punti plottati in `report/figure_data/`:
+  - `fig02_profile.csv` (10 righe)
+  - `fig06_strong_scaling.csv` (123 righe)
+  - `fig07_karp_flatt.csv` (52 righe)
+  - `fig08_openmp_schedules.csv` (3 righe)
+  - `fig09_taskbased_scaling.csv` (27 righe)
+  - `fig10_parallel_efficiency.csv` (103 righe)
+  - `fig11_amdahl_fit.csv` (29 righe)
+  - `fig12_grpc_vs_mpi.csv` (37 righe)
+  - `fig_e_hybrid_heatmap.csv` (12 righe)
+  - `fig_i_pcores_vs_all.csv` (40 righe)
+- Copiati tutti i PDF e PNG generati in `report/figures/`.
+- Aggiunta la Sezione 11 in `report/verify_numbers.py` (controlli anti-regressione su file esistenti, assenza di serie vietate, verifica di tutti i punti di controllo).
+- Esecuzione di `python3 report/verify_numbers.py`: **100% test superati con esito `[SUCCESS]`**.
+- Aggiornato `report/TRACEABILITY.md` con il mapping tra figure e CSV in `report/figure_data/`.
+
 
 
