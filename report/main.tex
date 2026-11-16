@@ -1,0 +1,402 @@
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+\captionsetup{font=small}
+\setlist{nosep}
+\setlength{\parskip}{2pt}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\textfraction}{0.08}
+
+\title{\textbf{Distributed Verification of ECDSA Signatures (P-256)} \\[0.1cm]
+\large High Performance Computing project report: \texttt{s4t-trust-hpc}}
+\author{Andrea Di Marco}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-0.9cm}
+
+% =====================================================
+\section{Introduction}
+
+\subsection{Scenario and motivation}
+
+\texttt{s4t-trust-hpc} is a modular framework for the automated onboarding of devices into an ecosystem based on Stack4Things (S4T), with trust decisions recorded on a blockchain through smart contracts. S4T is an OpenStack-based framework that manages fleets of IoT boards through the IoTronic service and the Lightning-Rod agent running on each board~\cite{s4t}. In our framework, an incoming device is accepted only if it can be authenticated, and the outcome (approval, lease of the node) is written on a ledger by two smart contracts. Authentication relies on the verification of ECDSA digital signatures on the NIST P-256 curve~\cite{fips186}.
+
+Verifying one signature takes about $55\,\mu$s, so a single core handles roughly $18{,}800$ signatures per second. This is enough for a single device, but onboarding many devices at once turns verification into a compute-bound batch job. The records of a batch are independent, which makes the problem a natural candidate for parallelization. We use it to study how a batch of independent tasks can be spread over the cores of one machine and over several processes or containers, and how data parallelism, task parallelism and their combination behave in practice.
+
+\subsection{Existing solutions and proposed solution}
+
+Existing work speeds up verification in three ways: faster arithmetic for a single signature (hand-tuned assembly for P-256 in OpenSSL~\cite{gueron}), batch verification for schemes that allow it, and process-level parallelism over independent signatures. The first two change the cost of one verification or the verification algorithm itself. In our case each device must be verified individually, so we keep the standard OpenSSL verification unchanged and parallelize over the batch.
+
+The proposed solution is a verification layer designed with the PCAM methodology (Partitioning, Communication, Agglomeration, Mapping)~\cite{foster}. It is implemented in C++ and evaluated with four models: OpenMP threads, MPI processes, a hybrid MPI+OpenMP, and gRPC services in containers, the last one being the form deployed in the S4T chain. Sections~\ref{sec:problem}--\ref{sec:mapping} follow the PCAM steps and Section~\ref{sec:eval} evaluates the results.
+
+% =====================================================
+\section{Problem rationale}\label{sec:problem}
+
+\subsection{Problem statement}
+
+Given a batch of $N$ records, each with a public key $Q$, a message $m$ and a signature $(r,s)$, compute the number of records whose signature is valid. The records have no order and no dependency on each other. The quantity of interest is the time to verify the whole batch as a function of the number of processing elements $p$.
+
+\subsection{Sequential solution}
+
+Let $G$ be the base point of the curve, $n$ its order and $H$ the SHA-256 hash. Algorithm~\ref{alg:seq} gives the sequential solution: the verification of one record, and the loop over the batch. In the implementation, \textsc{Verify} is performed through OpenSSL's \texttt{EVP\_DigestVerifyInit} and \texttt{EVP\_DigestVerify}; the two scalar multiplications in $u_1G+u_2Q$ are the dominant cost. The synthetic records used in the experiments are valid by construction, so the final count must equal $N$.
+
+\begin{algorithm}[t]
+\caption{Sequential verification of a batch (reference baseline, time $T_1$)}
+\label{alg:seq}
+\begin{algorithmic}[1]
+\Function{Verify}{$Q, m, r, s$}
+  \If{$r \notin [1,n-1]$ \textbf{or} $s \notin [1,n-1]$} \State \Return \textsc{invalid} \EndIf
+  \State $e \gets H(m)$;\quad $w \gets s^{-1} \bmod n$;\quad $u_1 \gets ew \bmod n$;\quad $u_2 \gets rw \bmod n$
+  \State $R \gets u_1 G + u_2 Q$
+  \If{$R$ is the point at infinity} \State \Return \textsc{invalid} \EndIf
+  \State \Return $(x_R \bmod n = r)$
+\EndFunction
+\Statex
+\State $\textit{valid} \gets 0$
+\For{$i = 0,\dots,N-1$}
+  \If{\Call{Verify}{$Q_i, m_i, r_i, s_i$}} \State $\textit{valid} \gets \textit{valid} + 1$ \EndIf
+\EndFor
+\State \Return $\textit{valid}$
+\end{algorithmic}
+\end{algorithm}
+
+The baseline is this loop on one P-core thread, compiled with \texttt{-O2}, on $N=20{,}000$ records. Its median over 10 runs is $T_1 = 1.0636$\,s (IQR 3.1\,ms), i.e.\ $18{,}804.8$ signatures/s, and it is the denominator of every speedup in this report. Measured one call at a time, a verification costs on average $57.42\,\mu$s (median $55.71\,\mu$s, coefficient of variation $12.7\%$, 99th percentile $87.44\,\mu$s). Task durations are therefore close to uniform. The mean exceeds $T_1/N = 53.18\,\mu$s by about 7\%; the timer overhead (12.8\,ns) is too small to explain it and we did not isolate the cause. These per-call figures are only used to size the chunks in Section~\ref{sec:agglomeration}.
+
+\subsection{Profile of the sequential code}
+
+We profiled the sequential code with Valgrind/Callgrind on a batch of 500 signatures (Table~\ref{tab:profile}). Callgrind counts executed instructions, not time. Cryptographic code accounts for 94.14\% of them, and Montgomery multiplication and squaring alone for 52.68\%. Application logic is 1.80\%. This confirms that the workload is integer-arithmetic bound and that nothing outside the verification is worth parallelizing. For the same reason we do not report FLOPS-based metrics: the code executes no significant floating-point work, so we use throughput in signatures per second.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lr}
+\toprule
+\textbf{Region} & \textbf{Executed instructions} \\
+\midrule
+Montgomery multiplication and squaring (\texttt{\_\_ecp\_nistz256\_mul/sqr\_montq}) & 52.68\% \\
+Other elliptic-curve and BIGNUM arithmetic & 35.20\% \\
+Other cryptographic routines & 6.26\% \\
+Memory management (\texttt{malloc}/\texttt{free}) & 3.20\% \\
+Application logic & 1.80\% \\
+Unattributed / runtime libc & 0.86\% \\
+\bottomrule
+\end{tabular}
+\caption{Callgrind instruction profile of the sequential verification (batch of 500).}
+\label{tab:profile}
+\end{table}
+
+\subsection{Related work and background}
+
+Foster's PCAM methodology~\cite{foster} structures the design of a parallel program in four steps, which we follow. Standard references on parallel algorithm design~\cite{grama} describe the patterns used here: domain decomposition over independent data, the task farm (a coordinator hands out chunks on request) and the pipeline. Message passing with MPI and shared-memory parallelism with OpenMP are the usual pair for hybrid programs, which are known to reduce communication cost on multi-core nodes but are sensitive to how processes and threads are placed on cores~\cite{rabenseifner}. For performance we use speedup, efficiency, Amdahl's law and the Karp-Flatt metric~\cite{karpflatt}. We did not find a published study of this specific combination (parallel P-256 batch verification on a heterogeneous P/E-core CPU); the report does not claim novelty on the cryptography, only a documented comparison of the models.
+
+% =====================================================
+\section{Decomposition and partitioning}\label{sec:partitioning}
+
+This section describes the decomposition without reference to processes, threads, messages or any library.
+
+\paragraph{Tasks and data.} The computation has two kinds of task. The \emph{verification task} $V_i$ ($i=0,\dots,N-1$) takes record $i$ and produces a decision $b_i\in\{0,1\}$ by running the \textsc{Verify} function of Algorithm~\ref{alg:seq}. The \emph{reduction task} $\Sigma$ takes all decisions and produces $\sum_i b_i$. All $V_i$ run the same code on different data, so the decomposition is by data (domain decomposition). The available concurrency is $N=20{,}000$, much larger than the number of processing elements ($p\le 20$).
+
+\paragraph{Graphs.} Figure~\ref{fig:graphs}(a) is the task dependency graph: every $V_i$ must precede $\Sigma$ and nothing else constrains them. The critical path is one verification followed by the reduction, so the maximum degree of concurrency is $N$. Figure~\ref{fig:graphs}(b) is the task interaction graph: there is no edge between any $V_i$ and $V_j$, and the only interaction is the fan-in to $\Sigma$, one integer per task. Communication is therefore static, regular and read-once.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[every node/.style={font=\scriptsize},
+  t/.style={draw,circle,minimum size=0.62cm,inner sep=0pt},
+  s/.style={draw,rounded corners,minimum width=0.9cm,minimum height=0.55cm,inner sep=2pt},
+  arr/.style={-{Latex[length=1.6mm]},thick}]
+% (a) dependency graph
+\foreach \i/\l/\x in {0/{V_0}/0, 1/{V_1}/0.95, 2/{V_2}/1.9, 3/{V_{N-1}}/3.3} {
+  \node[t] (a\i) at (\x,0) {$\l$};
+}
+\node at (2.6,0) {$\cdots$};
+\node[s] (as) at (1.65,-1.3) {$\Sigma$};
+\foreach \i in {0,1,2,3} \draw[arr] (a\i)--(as);
+\node[align=center] at (1.65,-2.05) {(a) dependency graph\\critical path $=2$};
+% (b) interaction graph
+\foreach \i/\l/\x in {0/{V_0}/5.6, 1/{V_1}/6.55, 2/{V_2}/7.5, 3/{V_{N-1}}/8.9} {
+  \node[t] (b\i) at (\x,0) {$\l$};
+}
+\node at (8.2,0) {$\cdots$};
+\node[s] (bs) at (7.25,-1.3) {$\Sigma$};
+\foreach \i in {0,1,2,3} \draw[thick] (b\i)--(bs);
+\node[align=center] at (7.25,-2.05) {(b) interaction graph\\no $V_i$--$V_j$ edges};
+% (c) pipeline
+\node[s] (c1) at (11.1,0) {$S_1$};
+\node[s] (c2) at (12.5,0) {$S_2$};
+\node[s] (c3) at (13.9,0) {$S_3$};
+\draw[arr] (c1)--(c2); \draw[arr] (c2)--(c3);
+\node[align=center] at (12.5,-1.0) {request $k{+}1$ enters $S_1$\\when $S_1$ is idle};
+\node[align=center] at (12.5,-2.05) {(c) production pipeline\\(dependency and interaction)};
+\end{tikzpicture}
+\caption{(a) Dependency and (b) interaction graph of the batch workload; (c) graph of the second workload, the three-stage production pipeline.}
+\label{fig:graphs}
+\end{figure}
+
+\paragraph{Other views of the same decomposition.} The same tasks can be seen as units of work that a coordinator hands out on demand (task farm), which matters when workers have different speeds. The platform's production workload is different: three stages $S_1\to S_2\to S_3$ in which each stage feeds the next (Figure~\ref{fig:graphs}(c)). Stages of one request cannot overlap, so parallelism comes only from several requests traversing the chain at the same time (functional pipeline). Parallelism inside a single signature verification, and pipelining across the phases of one batch, are not exploited.
+
+% =====================================================
+\section{Communication}\label{sec:communication}
+
+In the batch workload no input data is sent. Records are generated deterministically from an integer seed on the node that verifies them, so a worker receives only a seed, a chunk size and a thread count, and returns one integer (valid count) and its elapsed time. Data movement is a few bytes per chunk, independent of $N$. Table~\ref{tab:comm} gives the cost of the substrates we used.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{p{3.2cm}p{4.0cm}p{6.8cm}}
+\toprule
+\textbf{Substrate} & \textbf{Mechanism} & \textbf{Measured cost} \\
+\midrule
+MPI & Shared memory, intra-node & Reduction of 8 bytes: median 38\,$\mu$s \\
+gRPC, isolated containers & HTTP/2 on a Docker bridge & \texttt{Ping}: 1.1--1.3\,ms \\
+Production chain & REST + WAMP + gRPC & 210--250\,ms per stage ($\approx$690\,ms for three stages); first call 5.78\,s (Keystone token and WAMP session) \\
+\bottomrule
+\end{tabular}
+\caption{Communication cost of the substrates.}
+\label{tab:comm}
+\end{table}
+
+Since a signature takes about $55\,\mu$s, sending one task per message would cost far more than the task itself, which motivates the agglomeration below. Intra-node reduction is negligible; per-call costs of the container and production substrates are large compared with the work of small chunks.
+
+% =====================================================
+\section{Agglomeration and aggregation}\label{sec:agglomeration}
+
+\paragraph{Agglomeration.} Verification tasks are grouped into contiguous blocks. With $P$ groups, group $g$ ($0\le g<P$) receives
+\begin{equation}
+n_g = \left\lfloor N/P \right\rfloor + \begin{cases}1 & g < N \bmod P\\ 0 & \text{otherwise,}\end{cases}
+\end{equation}
+so chunk sizes differ by at most one signature, which keeps the load balanced when task durations are uniform. Agglomeration happens at two levels: the batch is split into one chunk per process or container, and each chunk is split among the threads of that process. In the dynamic scheme the batch is cut into chunks of $c$ signatures ($c=25$ or $50$ in our runs) that workers request one at a time.
+
+\paragraph{Aggregation.} The partial results are combined according to the model:
+\begin{itemize}
+  \item \emph{MPI static:} one reduction with \texttt{MPI\_SUM} over valid counts and one with \texttt{MPI\_MAX} over elapsed times, since the slowest rank sets the completion time.
+  \item \emph{MPI master-worker:} rank 0 receives chunk-completion messages and accumulates the count.
+  \item \emph{gRPC:} the client calls all workers concurrently (\texttt{asyncio.gather}), sums the returned counts and fails if the sum differs from $N$.
+  \item \emph{Production pipeline:} data is passed from stage to stage with no reduction.
+\end{itemize}
+
+% =====================================================
+\section{Mapping}\label{sec:mapping}
+
+\subsection{Models and mapping policies}
+
+Table~\ref{tab:models} lists the models evaluated, the form of parallelism each one implements and how chunks are mapped to workers.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{p{3.3cm}p{2.4cm}p{3.6cm}p{3.9cm}}
+\toprule
+\textbf{Model (experiment)} & \textbf{Mapping} & \textbf{Parallelism} & \textbf{Description} \\
+\midrule
+OpenMP loop (E1, E1c, E5) & Static or dynamic & Data & Loop over the chunk split among threads (\texttt{schedule} clause varied) \\
+MPI static (E2b) & Static & Data & Block partition, one chunk per rank \\
+gRPC static (E4) & Static & Data & Block partition, one chunk per container \\
+Hybrid static (E3, E3b) & Static & Data on two levels & Ranks $\times$ threads \\
+OpenMP \texttt{taskloop} (E6) & Dynamic & Task & Tasks of \texttt{grainsize} iterations in a task pool \\
+MPI master-worker (E6b) & Dynamic & Task (task farm) & Rank 0 only coordinates; workers request chunks \\
+Hybrid dynamic (E10) & Dynamic across ranks & Task + data & Task farm of chunks between ranks, OpenMP threads inside each chunk \\
+Production pipeline & Dynamic lease & Task (functional pipeline) & Stages $S_1\to S_2\to S_3$ across requests; nodes chosen through the on-chain lease \\
+\bottomrule
+\end{tabular}
+\caption{Parallel models, mapping policy and form of parallelism. The static hybrid is data parallelism applied twice (across ranks, then across threads), not a mix of task and data parallelism.}
+\label{tab:models}
+\end{table}
+
+Static mapping assigns one chunk per worker before execution and needs no coordination, but its completion time is set by the slowest worker. Dynamic mapping lets faster workers take more chunks, at the price of a coordinator that, in the MPI version, occupies a core without verifying signatures. The balance between the two depends on whether the cores are alike, as shown in Section~\ref{sec:eval}.
+
+\subsection{Mixing inter-process and intra-process parallelism}\label{sec:hybrid}
+
+In the hybrid implementation (Figure~\ref{fig:hybrid}) MPI handles the level between processes and OpenMP the level inside each process. The batch is first divided into $R$ chunks with the rule of Section~\ref{sec:agglomeration}. Inside a rank, an OpenMP loop splits the chunk among $T$ threads; every iteration builds its own OpenSSL context, so threads share no mutable state and need no locks. MPI is initialized with \texttt{MPI\_THREAD\_FUNNELED}, and all MPI calls are made by the master thread outside parallel regions, after the implicit barrier at the end of the loop. The nominal parallelism is $R\times T$.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[scale=0.9, every node/.style={font=\scriptsize},
+  proc/.style={draw,rounded corners,minimum width=3.0cm,minimum height=1.7cm,align=center},
+  th/.style={draw,minimum width=0.45cm,minimum height=0.4cm,fill=gray!15},
+  arr/.style={-{Latex[length=1.8mm]},thick}]
+\node[proc] (p0) at (0,0) {};
+\node[proc] (p1) at (4.2,0) {};
+\node[proc] (p2) at (8.4,0) {};
+\node at (0,0.65) {\textbf{Rank 0}}; \node at (4.2,0.65) {\textbf{Rank 1}}; \node at (8.4,0.65) {\textbf{Rank $R{-}1$}};
+\foreach \x in {0,4.2,8.4}{
+  \foreach \k in {-0.9,-0.3,0.3,0.9} \node[th] at (\x+\k,0.05) {};
+  \node at (\x,-0.5) {$T$ OpenMP threads};
+}
+\node at (6.3,0) {$\cdots$};
+\node[draw,rounded corners,minimum width=8.6cm,minimum height=0.6cm] (red) at (4.2,-1.9) {\texttt{MPI\_Reduce}: \texttt{MPI\_SUM} (counts), \texttt{MPI\_MAX} (times)};
+\foreach \x in {0,4.2,8.4} \draw[arr] (\x,-0.85)--(\x,-1.6);
+\end{tikzpicture}
+\caption{Two-level hybrid execution: $R$ MPI ranks, each running $T$ OpenMP threads over its chunk.}
+\label{fig:hybrid}
+\end{figure}
+
+\emph{Static example ($R=4$, $T=2$, E3b).} The batch of $20{,}000$ signatures gives each rank $5{,}000$, and each thread $2{,}500$. With \texttt{--map-by slot:PE=2 --bind-to core}, rank 0 runs on cores $\{0,1\}$, rank 1 on $\{2,3\}$, rank 2 on $\{4,5\}$, rank 3 on $\{6,7\}$, so no core is shared. \emph{Dynamic example (E10).} Rank 0 only coordinates: it receives chunk requests and sends chunks of $c=50$ signatures to ranks 1--3. Each worker splits its chunk over 2 threads (25 signatures each). Because rank 0 is given two cores by the placement, those cores do no verification: 2 of the 8 allocated cores (25\%) are idle.
+
+\subsection{Mapping to the hardware}\label{sec:hw}
+
+The host is an Intel Core i7-12700H with 14 physical cores and 20 logical CPUs: 6 P-cores with SMT (logical CPUs 0--11, two hardware threads per core) and 8 single-threaded E-cores (CPUs 12--19). An E-core is about $1.97\times$ slower than a P-core. Table~\ref{tab:binding} gives the placement used in each experiment.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{llp{6.0cm}p{3.9cm}}
+\toprule
+\textbf{Exp.} & \textbf{Model} & \textbf{Binding flags} & \textbf{Effect} \\
+\midrule
+E1 & OpenMP, unbound & None (OS scheduling) & Threads may migrate \\
+E1c & OpenMP, close & \texttt{OMP\_PLACES=cores OMP\_PROC\_BIND=close} & Fills P, then E, then SMT \\
+E2b & MPI & \texttt{--map-by core --bind-to core} (+\texttt{--use-hwthread-cpus} for $p>14$) & One rank per core \\
+E3 & Hybrid & \texttt{--use-hwthread-cpus --bind-to hwthread} & SMT siblings filled first \\
+E3b & Hybrid & \texttt{--map-by slot:PE=T --bind-to core}, $R=4$--7, $T=2$--3 & $T$ own cores per rank \\
+E6b & Master-worker & \texttt{--map-by core --bind-to core} & Master alone on core 0 \\
+E10 & Hybrid dynamic & as E3b & Master holds $T$ cores \\
+\bottomrule
+\end{tabular}
+\caption{Binding configurations of the experiments used in the evaluation.}
+\label{tab:binding}
+\end{table}
+
+Two mapping mistakes in our first experiments are worth reporting, because they changed the results. In the first MPI run (E2), \texttt{--bind-to core} was used without \texttt{--map-by core}: ranks 0 and 1 were placed on the two hardware threads of core 0, giving $S=1.24$ at $p=2$, consistent with the roughly $+20\%$ throughput of an SMT sibling. With \texttt{--map-by core} (E2b) the two ranks use different cores and $S=1.93$ ($E=0.97$). In the first master-worker run (E6) the master shared core 0 with worker 0 and $S$ was 1.97 at $R=4$; giving the master its own core (E6b) raised it to 2.87. We did not test why sharing a core costs so much more in the second case, so we report the effect and not a mechanism. All results below use the corrected mappings.
+
+% =====================================================
+\section{Performance evaluation}\label{sec:eval}
+
+\subsection{Method and metrics}
+
+All runs verify $N=20{,}000$ signatures, are repeated 10 times in interleaved order for each configuration, and use the CPU governor \texttt{performance}. We report medians and interquartile ranges (IQR). With $T_1=1.0636$\,s,
+\begin{equation}
+S(p)=\frac{T_1}{T_p},\qquad E(p)=\frac{S(p)}{p},\qquad e(p)=\frac{1/S(p)-1/p}{1-1/p}.
+\end{equation}
+To judge results against what the machine can do, we measured two capacity bounds (E9b) relative to the single-thread rate $v_1$: $C_{\mathrm{static}}(q)$, the throughput when the batch is split into $q$ equal chunks and the slowest core sets the time, and $C_{\mathrm{dyn}}(q)$, the throughput when every core works at its own speed without waiting. At $p=20$, $C_{\mathrm{static}}=8.74$ and $C_{\mathrm{dyn}}=10.20$.
+
+\subsection{Speedup versus number of computing elements}
+
+Figure~\ref{fig:speedup} and Table~\ref{tab:speedup} compare OpenMP (E1c), MPI (E2b), the static hybrid and the gRPC containers as functions of $p$.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.78\textwidth]{figures/fig_a_strong_scaling.pdf}
+\caption{Strong scaling speedup $S(p)$, $N=20{,}000$, medians of 10 runs. Shaded zones: P-cores ($p\le6$), E-cores added ($7\le p\le14$), SMT threads added ($15\le p\le20$). The dashed curves are the capacity bounds $C_{\mathrm{static}}$ and $C_{\mathrm{dyn}}$.}
+\label{fig:speedup}
+\end{figure}
+
+\begin{table}[t]
+\centering\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{rcccccccc}
+\toprule
+& \multicolumn{2}{c}{\textbf{OpenMP (E1c)}} & \multicolumn{2}{c}{\textbf{MPI (E2b)}} & \multicolumn{2}{c}{\textbf{Hybrid}} & \multicolumn{2}{c}{\textbf{gRPC (E4)}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+$p$ & $S$ & $E$ & $S$ & $E$ & $S$ & $E$ & $S_{\mathrm{wall}}$ & $S_{\mathrm{comp}}$ \\
+\midrule
+2  & 1.92 & 0.96 & 1.93 & 0.97 & --- & --- & 1.14 & 2.00 \\
+4  & 3.56 & 0.89 & 3.71 & 0.93 & --- & --- & 2.04 & 3.63 \\
+6  & 5.23 & 0.87 & 5.32 & 0.89 & --- & --- & 2.27 & 4.71 \\
+8  & 3.77 & 0.47 & 3.88 & 0.48 & 4.02$^\dagger$ & 0.50 & 2.80 & 5.27 \\
+12 & 5.34 & 0.45 & 5.49 & 0.46 & 5.14$^\dagger$ & 0.43 & 3.26 & 5.98 \\
+16 & 6.68 & 0.42 & 7.31 & 0.46 & 7.68$^*$ & 0.48 & 3.50 & 7.55 \\
+20 & 8.37 & 0.42 & 8.81 & 0.44 & 8.30$^*$ & 0.42 & 3.53 & 9.11 \\
+\bottomrule
+\end{tabular}
+\caption{Speedup and efficiency versus $p$ (medians). $^\dagger$E3b, core-bound; $^*$E3, hardware-thread-bound; the two hybrid mappings are not directly comparable. gRPC containers are not pinned; $S_{\mathrm{wall}}$ is end-to-end, $S_{\mathrm{comp}}$ uses the slowest worker's verification time (as \texttt{MPI\_MAX}). At $p=16,20$ the gRPC entries pool runs with single- and multi-threaded containers.}
+\label{tab:speedup}
+\end{table}
+
+Up to $p=6$ all three native models scale almost linearly on the P-cores (MPI $S=5.32$, $E=0.89$; OpenMP $S=5.23$). The Karp-Flatt metric of static MPI stays between 0.026 and 0.036 for $p\le6$ and jumps to $e(7)=0.18$, $e(8)=0.15$ when E-cores join. At $p=7$ the seventh chunk lands on an E-core, the six P-core ranks finish early and wait at the reduction, and $S$ drops to 3.35 ($3.88$ at $p=8$). The static models then reach 99--101\% of $C_{\mathrm{static}}(20)$ (MPI: $S=8.81$, 100.8\%; OpenMP static: $S=8.68$, 99.4\%), so what limits them at $p=20$ is the machine, not extra serial code. An Amdahl fit on $p\le4$ gives a serial fraction of 2.80\% for MPI (95\% bootstrap CI 2.33--4.01\%) and 4.47\% for OpenMP (3.27--5.77\%); it predicts $S=5.26$ at $p=6$ (measured 5.32), but overestimates beyond that, where the hardware becomes heterogeneous.
+
+\subsection{Static, dynamic and hybrid at equal physical cores}\label{sec:equal}
+
+To compare models fairly we index them by the number $R$ of physical cores allocated, coordinator included (Table~\ref{tab:equal}).
+
+\begin{table}[t]
+\centering\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{rccccc}
+\toprule
+$R$ & \textbf{MPI (E2b)} & \textbf{OpenMP (E1c)} & \textbf{Hybrid (E3b)} & \textbf{Master-worker (E6b)} & \textbf{Hybrid dyn.\ (E10)} \\
+\midrule
+4  & 3.71 [3.58--3.75] & 3.56 [3.44--3.69] & --- & 2.87 [2.83--2.88] & --- \\
+6  & 5.32 [5.20--5.36] & 5.23 [5.07--5.27] & --- & 4.49 [4.48--4.50] & --- \\
+7  & 3.35 [3.31--3.49] & --- & --- & 4.99 [4.97--5.00] & --- \\
+8  & 3.88 [3.76--3.99] & 3.77 [3.72--3.85] & 4.02 [4.01--4.02] & 5.49 [5.49--5.50] & 3.94 [3.86--4.28] \\
+10 & 4.72 [4.71--4.73] & 4.69 [4.55--4.80] & 4.80 [4.78--4.86] & 6.37 [6.36--6.41] & 5.03 [4.62--5.15] \\
+12 & 5.49 [5.46--5.54] & 5.34 [5.14--5.42] & 5.14 [5.14--5.16] & 7.24 [7.23--7.26] & 5.68 [5.50--5.86] \\
+14 & 6.40 [6.16--6.51] & 5.86 [5.61--6.13] & 6.01 [5.99--6.47] & 8.15 [8.09--8.19] & 6.43 [6.14--6.50] \\
+\bottomrule
+\end{tabular}
+\caption{Speedup $S$ [IQR] at equal allocated physical cores $R$. Dynamic runs use $c=25$ (E6b) and $c=50$ (E10).}
+\label{tab:equal}
+\end{table}
+
+\paragraph{Task parallelism (dynamic mapping).} On homogeneous P-cores ($R\le6$) the master-worker version is slower than static MPI (by 15.7\% at $R=6$ and 22.6\% at $R=4$), because rank 0 occupies a core without verifying. Counted over the active workers only ($S/(R-1)$), it reaches $0.90$--$0.97$, the same efficiency as the static version. Once E-cores join, the order reverses: master-worker is faster by 48.9\% at $R=7$, 41.7\% at $R=8$ and 27.4\% at $R=14$, because fast cores take more chunks instead of waiting at a barrier. At $R=7$ it still stays below static execution on six P-cores (4.99 against 5.32).
+
+\paragraph{Hybrid.} The static hybrid does not always beat the pure models. At $R=8$ it is higher than both MPI (4.02 against 3.88) and OpenMP (3.77), with non-overlapping IQRs; at $R=10$ it is above MPI (4.80 against 4.72) and indistinguishable from OpenMP; at $R=12$ it is below MPI (5.14 against 5.49); at $R=14$ it is indistinguishable from both. The hardware-thread-bound hybrid (E3) looks better at equal $p$ (for example $S=4.51$ at $p=8$ and 6.34 at $p=12$), but its flags place threads on SMT siblings, so it uses only 4 and 6 physical P-cores; that is a placement effect, not an algorithmic one, which is why the fair comparison is the one in Table~\ref{tab:equal}. The dynamic hybrid combines task parallelism between ranks with data parallelism inside the chunks, but it is slower than the single-threaded master-worker at every core count. Per active computing core it reaches $S/(R-T)\in[0.54,0.66]$ against $S/(R-1)\in[0.63,0.78]$ for E6b. The idle cores of the coordinator explain part of the gap; a larger chunk ($c=200$) gives $4.68$ [4.55--5.08] at $R=10$, indistinguishable from $c=50$ (5.03 [4.62--5.15]), so the rest does not close with chunk size and we did not identify its cause.
+
+\subsection{OpenMP scheduling and \texttt{taskloop}}
+
+At $T=16$ unpinned threads (E5), \texttt{static} scheduling gives 144.7 ksig/s ($S=7.69$), \texttt{guided} 159.9 ksig/s and \texttt{dynamic,16} 173.0 ksig/s ($S=9.20$, +19.6\% over static). At $T=20$, \texttt{dynamic,16} reaches $S=9.89$ against 8.68 for static, i.e.\ 97.0\% of $C_{\mathrm{dyn}}(20)$. Unpinned static is about 15\% faster than the pinned \texttt{close} binding at $T=16$ (7.69 against 6.68); we did not isolate the reason (with \texttt{OMP\_PLACES=cores}, $T>14$ places two threads on SMT siblings, but we did not test whether this explains it). With \texttt{taskloop} (grain sizes 10, 50, 100, 500; $T\in\{4,8,12,20\}$), grains of 50 and 100 are the best at $T=20$ (180.5 and 178.6 ksig/s), grain 10 stays near 19 ksig/s at every $T$, and grain 500 is lower at $T=8$ and $T=12$ (110.9 and 126.9 ksig/s). Grain 50 also gives 19.27 ksig/s at $T=4$, and we did not isolate why.
+
+\subsection{Containerized gRPC workers}
+
+In the gRPC benchmark (E4) the end-to-end speedup is far below the compute speedup (at $p=20$: $S_{\mathrm{wall}}=3.53$, $S_{\mathrm{comp}}=9.11$). An earlier version of this work attributed the difference to the network. It was mostly the generation of the synthetic devices inside each worker (about $39\,\mu$s per device, estimated and not measured directly), which happens inside the RPC but outside the timed verification. After subtracting it and the ping, the residual per run is 23.5--79.0\,ms when each container is pinned to its own CPU (E4c). At $p=6$ the containers pinned to six distinct P-cores also verify 22\% slower than MPI on the same cores ($S_{\mathrm{comp}}=4.13$ against 5.32), and the residual is highest (68.7--79.0\,ms); no hypothesis we tested explains this. The wall-clock spread at $p=16,20$ is wide because the pooled runs mix container topologies: at $p=16$, $4\times4$ runs give $S_{\mathrm{wall}}$ in 2.03--3.02 and $16\times1$ runs in 3.97--4.53. At $p\ge8$ the comparison between E4 and E2b is not at equal placement, since the OS placement of the unpinned containers was not logged.
+
+\subsection{Production pipeline}
+
+The three-stage chain on Stack4Things was measured earlier (5 repetitions, $n$ requests sent one after the other or concurrently); it was not re-run for this report. Table~\ref{tab:pipe} compares the speedup with the model $S(n,3)=3n/(n+2)$ for $k=3$ stages.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{crrrr}
+\toprule
+$n$ & $T_{\mathrm{seq}}$ (s) & $T_{\mathrm{conc}}$ (s) & Measured $S$ & Model $S(n,3)$ \\
+\midrule
+1 & 0.631 & 0.645 & 0.98 & 1.00 \\
+2 & 1.386 & 0.997 & 1.39 & 1.50 \\
+4 & 2.635 & 1.999 & 1.32 & 2.00 \\
+8 & 5.584 & 3.532 & 1.58 & 2.40 \\
+\bottomrule
+\end{tabular}
+\caption{Pipeline speedup, sequential against concurrent dispatch (measured values).}
+\label{tab:pipe}
+\end{table}
+
+Pipelining reduces the elapsed time by 36.8\% at $n=8$, but the measured speedup stays below the model (34.1\% gap at $n=4$ and $n=8$). With 5 repetitions the data cannot confirm or exclude saturation for $n\ge4$; request queuing in the messaging layer is a possible cause that we did not test.
+
+% =====================================================
+\section{Conclusions and limitations}
+
+\begin{itemize}
+  \item The batch is embarrassingly parallel and scales almost linearly while the cores are alike (MPI $S=5.32$ at $p=6$). On the heterogeneous host the static models saturate at about the static capacity of the machine ($S\approx8.8$ at $p=20$).
+  \item Static mapping is best on identical cores. When E-cores join, dynamic mapping (task parallelism) wins by 27--49\% at equal physical cores, while on identical cores the coordinator core costs 16--31\%.
+  \item The static hybrid is not systematically better than pure MPI or OpenMP at equal physical cores: higher at $R=8$, lower at $R=12$, indistinguishable at $R=14$. The dynamic hybrid is slower than the single-threaded master-worker, partly because the coordinator holds $T$ idle cores; the remaining gap has no tested cause.
+  \item Core placement changes the results as much as the programming model (E2 against E2b: $S=1.24$ against 1.93).
+\end{itemize}
+
+\textbf{Limitations.} Everything ran on one computer with two kinds of cores, so the results describe a heterogeneous multi-core node and not a homogeneous cluster; the ``nodes'' of the gRPC runs are containers sharing one host. Each configuration has 10 repetitions, and verdicts rely on IQR overlap. The device generation time in E4c is estimated, not measured. The pipeline experiment was not repeated, and the behavior of six pinned containers remains unexplained. Several causes are stated as untested where we did not isolate them.
+
+% =====================================================
+\begin{thebibliography}{99}\small
+\bibitem{s4t} F.~Longo, D.~Bruneo, S.~Distefano, G.~Merlino, A.~Puliafito. Stack4Things: an OpenStack-based framework for IoT. \emph{Int.\ Conf.\ on Future Internet of Things and Cloud (FiCloud)}, 2015.
+\bibitem{fips186} NIST. \emph{Digital Signature Standard (DSS)}, FIPS 186-5, 2023.
+\bibitem{gueron} S.~Gueron, V.~Krasnov. Fast prime field elliptic-curve cryptography with 256-bit primes. \emph{J.\ Cryptographic Engineering} 5(2), 2015.
+\bibitem{foster} I.~Foster. \emph{Designing and Building Parallel Programs}. Addison-Wesley, 1995.
+\bibitem{grama} A.~Grama, A.~Gupta, G.~Karypis, V.~Kumar. \emph{Introduction to Parallel Computing}, 2nd ed. Addison-Wesley, 2003.
+\bibitem{rabenseifner} R.~Rabenseifner, G.~Hager, G.~Jost. Hybrid MPI/OpenMP parallel programming on clusters of multi-core SMP nodes. \emph{17th Euromicro Int.\ Conf.\ on Parallel, Distributed and Network-based Processing}, 2009.
+\bibitem{karpflatt} A.~H.~Karp, H.~P.~Flatt. Measuring parallel processor performance. \emph{Communications of the ACM} 33(5), 1990.
+\end{thebibliography}
+
+\end{document}
